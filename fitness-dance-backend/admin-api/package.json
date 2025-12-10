@@ -6,7 +6,10 @@
     "postinstall": "cd .. && npx prisma generate --schema=prisma/schema.prisma",
     "dev": "nodemon",
     "build": "tsc",
+    "migrate:deploy": "npx prisma migrate deploy --schema=../prisma/schema.prisma",
+    "migrate:run-sql": "node ../run-migration.js",
     "start": "node dist/index.js",
+    "start:with-migration": "npm run migrate:deploy && node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
