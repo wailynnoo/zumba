@@ -1,0 +1,701 @@
+// prisma/schema.prisma
+// Fitness Dance App - Database Schema
+// Project: zfitdance.com
+// Database: PostgreSQL (Supabase)
+// ORM: Prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+// Regular Member Users
+// Note: At least one of email or phone_number must be provided and verified
+model User {
+  id            String    @id @default(uuid())
+  email         String?   @unique
+  phoneNumber   String?   @unique @map("phone_number")
+  passwordHash  String    @map("password_hash")
+  displayName   String?   @map("display_name")
+  avatarUrl     String?   @map("avatar_url")
+  dateOfBirth   DateTime? @map("date_of_birth") @db.Date
+  gender        String?
+  address       String? // User address
+  weight        Float? // User weight in kg
+  preferredLang String    @default("en") @map("preferred_lang")
+  isActive      Boolean   @default(true) @map("is_active")
+
+  // Email Verification
+  isEmailVerified            Boolean   @default(false) @map("is_email_verified")
+  emailVerifiedAt            DateTime? @map("email_verified_at")
+  emailVerificationToken     String?   @map("email_verification_token")
+  emailVerificationExpiresAt DateTime? @map("email_verification_expires_at")
+
+  // Phone Verification
+  isPhoneVerified            Boolean   @default(false) @map("is_phone_verified")
+  phoneVerifiedAt            DateTime? @map("phone_verified_at")
+  phoneVerificationCode      String?   @map("phone_verification_code")
+  phoneVerificationExpiresAt DateTime? @map("phone_verification_expires_at")
+
+  // Password Reset
+  passwordResetToken     String?   @map("password_reset_token")
+  passwordResetExpiresAt DateTime? @map("password_reset_expires_at")
+
+  // Preferences
+  preferences Json? // User preferences (JSONB)
+
+  lastLoginAt DateTime? @map("last_login_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  // Relations
+  subscriptions  Subscription[]
+  payments       Payment[]
+  playlists      Playlist[]
+  ratings        Rating[]
+  feedback       Feedback[]
+  watchHistory   WatchHistory[]
+  favorites      Favorite[]
+  notifications  Notification[]
+  refreshTokens  RefreshToken[]
+  oauthProviders UserOAuthProvider[]
+  fileUploads    FileUpload[]
+  auditLogs      AuditLog[]
+  searchHistory  SearchHistory[]
+
+  @@index([email])
+  @@index([phoneNumber])
+  @@index([isActive])
+  @@index([email, isEmailVerified])
+  @@index([phoneNumber, isPhoneVerified])
+  @@index([displayName])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+// Admin Roles (for role-based access control)
+model AdminRole {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  permissions Json? // JSON object with permissions
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  admins Admin[]
+
+  @@index([slug])
+  @@index([isActive])
+  @@map("admin_roles")
+}
+
+// Admin Users (separate from regular users)
+model Admin {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  displayName  String?   @map("display_name")
+  avatarUrl    String?   @map("avatar_url")
+  adminRoleId  String    @map("admin_role_id")
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdById  String?   @map("created_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  // Relations
+  adminRole        AdminRole         @relation(fields: [adminRoleId], references: [id])
+  createdBy        Admin?            @relation("AdminCreatedBy", fields: [createdById], references: [id])
+  createdAdmins    Admin[]           @relation("AdminCreatedBy")
+  fileUploads      FileUpload[]
+  auditLogs        AuditLog[]
+  refreshTokens    AdminRefreshToken[]
+
+  @@index([email])
+  @@index([adminRoleId])
+  @@index([isActive])
+  @@map("admins")
+}
+
+// ============================================
+// CONTENT CATEGORIES
+// ============================================
+
+model VideoCategory {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  iconUrl     String?   @map("icon_url")
+  isActive    Boolean   @default(true) @map("is_active")
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  // Relations
+  subcategories VideoSubcategory[]
+  collections   VideoCollection[]
+  videos        Video[]
+
+  @@index([slug])
+  @@index([isActive])
+  @@map("video_categories")
+}
+
+model VideoCollection {
+  id           String    @id @default(uuid())
+  categoryId   String    @map("category_id")
+  name         String
+  slug         String    @unique
+  description  String?
+  thumbnailUrl String?   @map("thumbnail_url")
+  isFeatured   Boolean   @default(false) @map("is_featured")
+  isActive     Boolean   @default(true) @map("is_active")
+  sortOrder    Int       @default(0) @map("sort_order")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  // Relations
+  category VideoCategory @relation(fields: [categoryId], references: [id])
+  videos   Video[]
+
+  @@index([categoryId])
+  @@index([slug])
+  @@index([isFeatured])
+  @@index([isActive])
+  @@map("video_collections")
+}
+
+model VideoSubcategory {
+  id          String    @id @default(uuid())
+  categoryId  String    @map("category_id")
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  isActive    Boolean   @default(true) @map("is_active")
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  // Relations
+  category VideoCategory @relation(fields: [categoryId], references: [id])
+  videos   Video[]
+
+  @@index([categoryId])
+  @@index([slug])
+  @@index([isActive])
+  @@map("video_subcategories")
+}
+
+model DanceStyle {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  iconUrl     String?  @map("icon_url")
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  videos            Video[]
+  knowledgeArticles KnowledgeArticle[]
+
+  @@index([slug])
+  @@index([isActive])
+  @@map("dance_styles")
+}
+
+model IntensityLevel {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  videos Video[]
+
+  @@index([slug])
+  @@map("intensity_levels")
+}
+
+// ============================================
+// VIDEO CONTENT
+// ============================================
+
+model Video {
+  id                String    @id @default(uuid())
+  title             String
+  description       String?
+  categoryId        String    @map("category_id")
+  subcategoryId     String?   @map("subcategory_id")
+  collectionId      String?   @map("collection_id")
+  danceStyleId      String    @map("dance_style_id")
+  intensityLevelId  String    @map("intensity_level_id")
+  cloudflareVideoId String?   @unique @map("cloudflare_video_id")
+  youtubeVideoId    String?   @map("youtube_video_id")
+  videoType         String    @default("premium") @map("video_type") // 'premium' | 'youtube_short'
+  audioUrl          String?   @map("audio_url") // Optional audio-only track URL
+  hasAudioMode      Boolean   @default(true) @map("has_audio_mode") // Whether audio-only mode is available
+  thumbnailUrl      String?   @map("thumbnail_url")
+  durationSeconds   Int?      @map("duration_seconds")
+  viewCount         Int       @default(0) @map("view_count")
+  isPublished       Boolean   @default(false) @map("is_published")
+  publishedAt       DateTime? @map("published_at")
+  sortOrder         Int       @default(0) @map("sort_order")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  deletedAt         DateTime? @map("deleted_at")
+
+  // Relations
+  category       VideoCategory     @relation(fields: [categoryId], references: [id])
+  subcategory    VideoSubcategory? @relation(fields: [subcategoryId], references: [id])
+  collection     VideoCollection?  @relation(fields: [collectionId], references: [id])
+  danceStyle     DanceStyle        @relation(fields: [danceStyleId], references: [id])
+  intensityLevel IntensityLevel    @relation(fields: [intensityLevelId], references: [id])
+  playlistItems  PlaylistItem[]
+  ratings        Rating[]
+  feedback       Feedback[]
+  watchHistory   WatchHistory[]
+  favorites      Favorite[]
+
+  @@index([categoryId])
+  @@index([subcategoryId])
+  @@index([collectionId])
+  @@index([danceStyleId])
+  @@index([intensityLevelId])
+  @@index([isPublished])
+  @@index([videoType])
+  @@index([cloudflareVideoId])
+  @@index([categoryId, subcategoryId])
+  @@index([categoryId, collectionId])
+  @@map("videos")
+}
+
+// ============================================
+// SUBSCRIPTION & PAYMENT
+// ============================================
+
+model SubscriptionPlan {
+  id              String   @id @default(uuid())
+  name            String
+  durationMonths  Int      @map("duration_months")
+  priceMmk        Decimal  @map("price_mmk") @db.Decimal(10, 2)
+  discountPercent Decimal  @default(0) @map("discount_percent") @db.Decimal(5, 2)
+  isActive        Boolean  @default(true) @map("is_active")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  subscriptions Subscription[]
+
+  @@index([durationMonths])
+  @@index([isActive])
+  @@map("subscription_plans")
+}
+
+model Subscription {
+  id                 String    @id @default(uuid())
+  userId             String    @map("user_id")
+  subscriptionPlanId String    @map("subscription_plan_id")
+  status             String // 'active' | 'expired' | 'cancelled'
+  trialStartedAt     DateTime? @map("trial_started_at")
+  trialEndsAt        DateTime? @map("trial_ends_at")
+  startedAt          DateTime? @map("started_at")
+  expiresAt          DateTime  @map("expires_at")
+  autoRenew          Boolean   @default(true) @map("auto_renew")
+  cancelledAt        DateTime? @map("cancelled_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  deletedAt          DateTime? @map("deleted_at")
+
+  // Relations
+  user             User             @relation(fields: [userId], references: [id])
+  subscriptionPlan SubscriptionPlan @relation(fields: [subscriptionPlanId], references: [id])
+  payments         Payment[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([userId, status, expiresAt])
+  @@map("subscriptions")
+}
+
+model Payment {
+  id                String    @id @default(uuid())
+  userId            String    @map("user_id")
+  subscriptionId    String    @map("subscription_id")
+  amountMmk         Decimal   @map("amount_mmk") @db.Decimal(10, 2)
+  currency          String    @default("MMK")
+  paymentMethod     String    @default("mmqr") @map("payment_method")
+  mmqrTransactionId String?   @map("mmqr_transaction_id")
+  mmqrQrCode        String?   @map("mmqr_qr_code")
+  status            String // 'pending' | 'completed' | 'failed'
+  paidAt            DateTime? @map("paid_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user         User         @relation(fields: [userId], references: [id])
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+
+  @@index([userId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@index([mmqrTransactionId])
+  @@map("payments")
+}
+
+// ============================================
+// PLAYLISTS
+// ============================================
+
+model Playlist {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  name        String
+  description String?
+  isPublic    Boolean   @default(false) @map("is_public")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  // Relations
+  user  User           @relation(fields: [userId], references: [id])
+  items PlaylistItem[]
+
+  @@index([userId])
+  @@index([isPublic])
+  @@map("playlists")
+}
+
+model PlaylistItem {
+  id         String   @id @default(uuid())
+  playlistId String   @map("playlist_id")
+  videoId    String   @map("video_id")
+  sortOrder  Int      @default(0) @map("sort_order")
+  addedAt    DateTime @default(now()) @map("added_at")
+
+  // Relations
+  playlist Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  video    Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([playlistId, videoId])
+  @@index([playlistId])
+  @@index([videoId])
+  @@index([playlistId, sortOrder])
+  @@map("playlist_items")
+}
+
+// ============================================
+// RATINGS & FEEDBACK
+// ============================================
+
+model Rating {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  videoId   String   @map("video_id")
+  rating    Int // 1-5
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id])
+  video Video @relation(fields: [videoId], references: [id])
+
+  @@unique([userId, videoId])
+  @@index([userId])
+  @@index([videoId])
+  @@map("ratings")
+}
+
+model Feedback {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  videoId       String?   @map("video_id")
+  subject       String?
+  message       String
+  rating        Int?
+  status        String    @default("new") // 'new' | 'read' | 'responded'
+  adminResponse String?   @map("admin_response")
+  respondedAt   DateTime? @map("responded_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  // Relations
+  user  User   @relation(fields: [userId], references: [id])
+  video Video? @relation(fields: [videoId], references: [id])
+
+  @@index([userId])
+  @@index([videoId])
+  @@index([status])
+  @@map("feedback")
+}
+
+// ============================================
+// KNOWLEDGE
+// ============================================
+
+model KnowledgeArticle {
+  id           String    @id @default(uuid())
+  title        String
+  content      String    @db.Text
+  category     String // 'fitness' | 'dance'
+  danceStyleId String?   @map("dance_style_id")
+  thumbnailUrl String?   @map("thumbnail_url")
+  readingTime  Int?      @map("reading_time")
+  isPublished  Boolean   @default(false) @map("is_published")
+  publishedAt  DateTime? @map("published_at")
+  viewCount    Int       @default(0) @map("view_count")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  // Relations
+  danceStyle DanceStyle? @relation(fields: [danceStyleId], references: [id])
+
+  @@index([category])
+  @@index([isPublished])
+  @@index([danceStyleId])
+  @@map("knowledge_articles")
+}
+
+// ============================================
+// USER ACTIVITY
+// ============================================
+
+model WatchHistory {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  videoId        String   @map("video_id")
+  watchedSeconds Int      @default(0) @map("watched_seconds")
+  completed      Boolean  @default(false)
+  playbackMode   String   @default("video") @map("playback_mode") // 'video' | 'audio'
+  lastWatchedAt  DateTime @default(now()) @map("last_watched_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id])
+  video Video @relation(fields: [videoId], references: [id])
+
+  @@unique([userId, videoId])
+  @@index([userId])
+  @@index([videoId])
+  @@index([lastWatchedAt])
+  @@map("watch_history")
+}
+
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  videoId   String   @map("video_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id])
+  video Video @relation(fields: [videoId], references: [id])
+
+  @@unique([userId, videoId])
+  @@index([userId])
+  @@index([videoId])
+  @@map("favorites")
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  type      String // 'subscription', 'trial', 'content', 'news', etc.
+  title     String
+  message   String    @db.Text
+  data      Json? // Additional data
+  isRead    Boolean   @default(false) @map("is_read")
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
+
+// ============================================
+// AUTHENTICATION & SECURITY
+// ============================================
+
+// Refresh tokens for regular users (member-api)
+model RefreshToken {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash") // Hashed token for security
+  expiresAt  DateTime  @map("expires_at")
+  isRevoked  Boolean   @default(false) @map("is_revoked")
+  revokedAt  DateTime? @map("revoked_at")
+  deviceInfo String?   @map("device_info")
+  ipAddress  String?   @map("ip_address")
+  userAgent  String?   @map("user_agent")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@index([isRevoked])
+  @@map("refresh_tokens")
+}
+
+// Refresh tokens for admin users (admin-api)
+model AdminRefreshToken {
+  id         String    @id @default(uuid())
+  adminId    String    @map("admin_id")
+  tokenHash  String    @unique @map("token_hash") // Hashed token for security
+  expiresAt  DateTime  @map("expires_at")
+  isRevoked  Boolean   @default(false) @map("is_revoked")
+  revokedAt  DateTime? @map("revoked_at")
+  deviceInfo String?   @map("device_info")
+  ipAddress  String?   @map("ip_address")
+  userAgent  String?   @map("user_agent")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@index([isRevoked])
+  @@map("admin_refresh_tokens")
+}
+
+model UserOAuthProvider {
+  id             String    @id @default(uuid())
+  userId         String    @map("user_id")
+  provider       String // 'google', 'apple'
+  providerId     String    @map("provider_id")
+  email          String?
+  accessToken    String?   @map("access_token")
+  refreshToken   String?   @map("refresh_token")
+  tokenExpiresAt DateTime? @map("token_expires_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
+  @@index([userId])
+  @@index([provider, providerId])
+  @@map("user_oauth_providers")
+}
+
+// ============================================
+// SYSTEM & CONFIGURATION
+// ============================================
+
+model SystemSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String?
+  type        String   @default("string") // 'string', 'number', 'boolean', 'json'
+  category    String?
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([key])
+  @@index([category])
+  @@map("system_settings")
+}
+
+model FileUpload {
+  id           String   @id @default(uuid())
+  userId       String?  @map("user_id")
+  adminId      String?  @map("admin_id")
+  fileType     String   @map("file_type")
+  fileName     String   @map("file_name")
+  fileSize     BigInt?  @map("file_size")
+  mimeType     String?  @map("mime_type")
+  storageUrl   String   @map("storage_url")
+  storageKey   String?  @map("storage_key")
+  uploadStatus String   @default("pending") @map("upload_status")
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user  User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  admin Admin? @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([adminId])
+  @@index([fileType])
+  @@index([uploadStatus])
+  @@map("file_uploads")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  adminId    String?  @map("admin_id")
+  action     String
+  entityType String?  @map("entity_type")
+  entityId   String?  @map("entity_id")
+  changes    Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user  User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  admin Admin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([adminId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model SearchHistory {
+  id           String   @id @default(uuid())
+  userId       String?  @map("user_id")
+  query        String
+  resultsCount Int      @default(0) @map("results_count")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([query])
+  @@index([createdAt])
+  @@map("search_history")
+}

@@ -1,0 +1,33 @@
+{
+  "name": "fitness-dance-backend",
+  "version": "1.0.0",
+  "description": "**Project:** Fitness Dance App  \r **Domain:** zfitdance.com  \r **Structure:** Monorepo with Shared Database",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "seed": "tsx prisma/seed.ts",
+    "verify-seed": "tsx prisma/verify-seed.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "prisma": "^7.1.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.1.0",
+    "@prisma/client": "^7.1.0",
+    "@types/bcrypt": "^6.0.0",
+    "@types/pg": "^8.15.6",
+    "bcrypt": "^6.0.0",
+    "dotenv": "^17.2.3",
+    "pg": "^8.16.3"
+  }
+}
