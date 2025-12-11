@@ -5,6 +5,7 @@ import { Router } from "express";
 import { categoryController } from "../controllers/category.controller";
 import { authenticate, requirePermission } from "../middleware/auth.middleware";
 import { validateQuery, querySchemas } from "../middleware/validation.middleware";
+import { uploadCategoryImage, handleUploadError } from "../middleware/upload.middleware";
 import { z } from "zod";
 
 const router = Router();
@@ -49,6 +50,19 @@ router.delete("/:id", requirePermission("categories", "delete"), categoryControl
 
 // Toggle category status - requires 'update' permission
 router.patch("/:id/toggle-status", requirePermission("categories", "update"), categoryController.toggleCategoryStatus.bind(categoryController));
+
+// Image upload routes - requires 'update' permission
+// Upload category image - POST /api/categories/:id/image
+router.post(
+  "/:id/image",
+  requirePermission("categories", "update"),
+  uploadCategoryImage.single("image"),
+  handleUploadError,
+  categoryController.uploadCategoryImage.bind(categoryController)
+);
+
+// Delete category image - DELETE /api/categories/:id/image
+router.delete("/:id/image", requirePermission("categories", "update"), categoryController.deleteCategoryImage.bind(categoryController));
 
 export default router;
 

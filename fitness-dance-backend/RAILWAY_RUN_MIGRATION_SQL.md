@@ -1,8 +1,12 @@
 # Run Migration SQL via Railway CLI 🚀
 
+**✅ WORKING SOLUTION - Verified and Tested**
+
 **Problem:** Railway doesn't deploy `prisma/migrations` folder, and `railway connect` doesn't work.
 
-**Solution:** Use Railway CLI to run a Node.js script that executes the SQL directly.
+**Solution:** Use Railway CLI to run a Node.js script that executes the SQL directly via TCP proxy.
+
+> **📖 Quick Reference:** See [RAILWAY_MIGRATION_QUICK_REFERENCE.md](./RAILWAY_MIGRATION_QUICK_REFERENCE.md) for the fastest way to run migrations.
 
 ---
 

@@ -10,9 +10,35 @@ import dotenv from "dotenv";
 // Load environment variables
 dotenv.config();
 
+// Get DATABASE_URL and handle Railway internal URL
+let databaseUrl = process.env.DATABASE_URL || process.env.DATABASE_PUBLIC_URL;
+
+// If DATABASE_URL contains internal Railway URL, construct public URL from TCP proxy
+if (databaseUrl && databaseUrl.includes("postgres.railway.internal")) {
+  const tcpProxyDomain =
+    process.env.RAILWAY_TCP_PROXY_DOMAIN || "nozomi.proxy.rlwy.net";
+  const tcpProxyPort = process.env.RAILWAY_TCP_PROXY_PORT || "56096";
+  const pgUser = process.env.PGUSER || "postgres";
+  const pgPassword = process.env.PGPASSWORD;
+  const pgDatabase = process.env.PGDATABASE || "railway";
+
+  if (pgPassword) {
+    databaseUrl = `postgresql://${pgUser}:${pgPassword}@${tcpProxyDomain}:${tcpProxyPort}/${pgDatabase}`;
+    console.log("📡 Using TCP proxy connection (public URL)");
+  } else {
+    console.error("❌ Cannot construct public URL: PGPASSWORD not found");
+    process.exit(1);
+  }
+}
+
+if (!databaseUrl) {
+  console.error("❌ DATABASE_URL environment variable is not set");
+  process.exit(1);
+}
+
 // Create Prisma Client with adapter
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: databaseUrl,
 });
 
 const adapter = new PrismaPg(pool);

@@ -4,6 +4,48 @@
 import prisma from "../config/database";
 import { z } from "zod";
 
+/**
+ * Convert full URL to relative path for database storage
+ * If already relative, return as is
+ */
+function normalizeImageUrl(urlOrPath: string | null | undefined): string | null {
+  if (!urlOrPath) return null;
+  
+  // If it's a full URL (starts with http), extract the path
+  if (urlOrPath.startsWith("http://") || urlOrPath.startsWith("https://")) {
+    try {
+      const urlObj = new URL(urlOrPath);
+      const urlPath = urlObj.pathname;
+      // Remove leading slash: /uploads/categories/file.jpg -> uploads/categories/file.jpg
+      return urlPath.startsWith("/") ? urlPath.substring(1) : urlPath;
+    } catch {
+      // If URL parsing fails, try to extract path manually
+      const match = urlOrPath.match(/\/(uploads\/.*)$/);
+      return match ? match[1] : urlOrPath;
+    }
+  }
+  
+  // If it contains a domain but no protocol, extract just the path part
+  if (urlOrPath.includes(".up.railway.app") || urlOrPath.includes(".railway.app") || urlOrPath.includes("://")) {
+    // Try to find the uploads part
+    const parts = urlOrPath.split("/");
+    const uploadsIndex = parts.findIndex(p => p === "uploads");
+    if (uploadsIndex >= 0) {
+      // Return everything from "uploads" onwards
+      return parts.slice(uploadsIndex).join("/");
+    }
+    
+    // If no "uploads" found, try to extract from URL pattern
+    const match = urlOrPath.match(/(uploads\/.*)$/);
+    if (match) {
+      return match[1];
+    }
+  }
+  
+  // Already a clean relative path
+  return urlOrPath;
+}
+
 // Validation schemas
 export const createCategorySchema = z.object({
   name: z.string().min(1).max(100),
@@ -68,7 +110,7 @@ export class CategoryService {
           name: data.name,
           slug: data.slug,
           description: data.description,
-          iconUrl: data.iconUrl || null,
+          iconUrl: normalizeImageUrl(data.iconUrl) || null,
           isActive: data.isActive,
           sortOrder: data.sortOrder,
           deletedAt: null, // Restore by clearing deletedAt
@@ -83,7 +125,7 @@ export class CategoryService {
         name: data.name,
         slug: data.slug,
         description: data.description,
-        iconUrl: data.iconUrl || null,
+        iconUrl: normalizeImageUrl(data.iconUrl) || null,
         isActive: data.isActive,
         sortOrder: data.sortOrder,
       },
@@ -243,7 +285,7 @@ export class CategoryService {
         ...(data.name && { name: data.name }),
         ...(data.slug && { slug: data.slug }),
         ...(data.description !== undefined && { description: data.description }),
-        ...(data.iconUrl !== undefined && { iconUrl: data.iconUrl || null }),
+        ...(data.iconUrl !== undefined && { iconUrl: normalizeImageUrl(data.iconUrl) || null }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),
         ...(data.sortOrder !== undefined && { sortOrder: data.sortOrder }),
       },

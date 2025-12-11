@@ -50,6 +50,10 @@ app.use(express.urlencoded({ extended: true, limit: bodySizeLimit.urlencoded }))
 // Apply general rate limiting to all routes
 app.use(apiLimiter);
 
+// Serve static files (uploaded images)
+import path from "path";
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
 // Health check route
 app.get("/health", (_req: Request, res: Response) => {
   res.status(200).json({
