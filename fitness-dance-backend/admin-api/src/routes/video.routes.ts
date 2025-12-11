@@ -1,0 +1,116 @@
+// admin-api/src/routes/video.routes.ts
+// Video routes for Admin API
+
+import { Router, Request, Response, NextFunction } from "express";
+import { videoController } from "../controllers/video.controller";
+import { authenticate, requirePermission } from "../middleware/auth.middleware";
+import { validateQuery } from "../middleware/validation.middleware";
+import { uploadVideo, uploadThumbnail, uploadAudio, handleUploadError } from "../middleware/upload.middleware";
+import { z } from "zod";
+
+const router = Router();
+
+// All video routes require authentication
+router.use(authenticate);
+
+// Video CRUD routes with RBAC
+// Create video - requires 'create' permission on 'videos' resource
+router.post("/", requirePermission("videos", "create"), videoController.createVideo.bind(videoController));
+
+// List videos - requires 'read' permission on 'videos' resource
+router.get(
+  "/",
+  requirePermission("videos", "read"),
+  validateQuery(
+    z.object({
+      page: z.coerce.number().int().positive().optional(),
+      limit: z.coerce.number().int().positive().max(100).optional(),
+      categoryId: z.string().uuid().optional(),
+      subcategoryId: z.string().uuid().optional(),
+      collectionId: z.string().uuid().optional(),
+      danceStyleId: z.string().uuid().optional(),
+      intensityLevelId: z.string().uuid().optional(),
+      isPublished: z.coerce.boolean().optional(),
+      videoType: z.enum(["premium", "youtube_short"]).optional(),
+      search: z.string().optional(),
+    }).passthrough()
+  ),
+  videoController.getVideos.bind(videoController)
+);
+
+// Get video by ID - requires 'read' permission
+router.get(
+  "/:id",
+  requirePermission("videos", "read"),
+  validateQuery(z.object({}).passthrough()),
+  videoController.getVideoById.bind(videoController)
+);
+
+// Update video - requires 'update' permission on 'videos' resource
+router.put("/:id", requirePermission("videos", "update"), videoController.updateVideo.bind(videoController));
+
+// Delete video - requires 'delete' permission on 'videos' resource
+router.delete("/:id", requirePermission("videos", "delete"), videoController.deleteVideo.bind(videoController));
+
+// Toggle published status - requires 'update' permission
+router.patch("/:id/publish", requirePermission("videos", "update"), videoController.togglePublishedStatus.bind(videoController));
+
+// File upload routes - requires 'update' permission
+// Upload video file - POST /api/videos/:id/video
+router.post(
+  "/:id/video",
+  (req: Request, _res: Response, next: NextFunction) => {
+    console.log("[Video Route] POST /:id/video - Request received:", {
+      method: req.method,
+      path: req.path,
+      params: req.params,
+      hasFile: !!req.file,
+      contentType: req.headers["content-type"],
+      contentLength: req.headers["content-length"],
+    });
+    next();
+  },
+  requirePermission("videos", "update"),
+  uploadVideo.single("video"),
+  (req: Request, _res: Response, next: NextFunction) => {
+    console.log("[Video Route] After multer - File processed:", {
+      hasFile: !!req.file,
+      fileName: req.file?.originalname,
+      fileSize: req.file?.size,
+      mimetype: req.file?.mimetype,
+    });
+    next();
+  },
+  handleUploadError,
+  videoController.uploadVideo.bind(videoController)
+);
+
+// Upload thumbnail - POST /api/videos/:id/thumbnail
+router.post(
+  "/:id/thumbnail",
+  requirePermission("videos", "update"),
+  uploadThumbnail.single("thumbnail"),
+  handleUploadError,
+  videoController.uploadThumbnail.bind(videoController)
+);
+
+// Upload audio - POST /api/videos/:id/audio
+router.post(
+  "/:id/audio",
+  requirePermission("videos", "update"),
+  uploadAudio.single("audio"),
+  handleUploadError,
+  videoController.uploadAudio.bind(videoController)
+);
+
+// Delete video file - DELETE /api/videos/:id/video
+router.delete("/:id/video", requirePermission("videos", "update"), videoController.deleteVideoFile.bind(videoController));
+
+// Delete thumbnail - DELETE /api/videos/:id/thumbnail
+router.delete("/:id/thumbnail", requirePermission("videos", "update"), videoController.deleteThumbnail.bind(videoController));
+
+// Delete audio file - DELETE /api/videos/:id/audio
+router.delete("/:id/audio", requirePermission("videos", "update"), videoController.deleteAudio.bind(videoController));
+
+export default router;
+

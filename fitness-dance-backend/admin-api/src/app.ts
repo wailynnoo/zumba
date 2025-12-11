@@ -1,7 +1,7 @@
 // admin-api/src/app.ts
 // Express application setup for Admin API
 
-import express, { Application, Request, Response } from "express";
+import express, { Application, Request, Response, NextFunction } from "express";
 import cors from "cors";
 import {
   securityHeaders,
@@ -16,8 +16,10 @@ import { env } from "./config/env";
 const app: Application = express();
 
 // Trust proxy (for rate limiting behind reverse proxy/load balancer)
+// Railway and most cloud platforms are behind a proxy, so default to true in production
 // Set to 1 if behind a single proxy, or number of proxies in chain
 app.set("trust proxy", env.TRUST_PROXY ? 1 : false);
+console.log(`[App] Trust proxy: ${env.TRUST_PROXY ? "enabled" : "disabled"} (NODE_ENV: ${env.NODE_ENV})`);
 
 // Security middleware - Apply first
 app.use(securityHeaders);
@@ -47,6 +49,37 @@ app.use(
 app.use(express.json({ limit: bodySizeLimit.json }));
 app.use(express.urlencoded({ extended: true, limit: bodySizeLimit.urlencoded }));
 
+// Log all incoming requests (for debugging)
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  // Log ALL POST requests to help debug
+  if (req.method === "POST") {
+    console.log("[App] Incoming POST request:", {
+      method: req.method,
+      path: req.path,
+      url: req.url,
+      contentType: req.headers["content-type"],
+      contentLength: req.headers["content-length"],
+      hasAuth: !!req.headers.authorization,
+      userAgent: req.headers["user-agent"],
+      timestamp: new Date().toISOString(),
+    });
+  }
+  // Always log file upload requests (only POST/PUT/PATCH, not GET)
+  if ((req.method === "POST" || req.method === "PUT" || req.method === "PATCH") &&
+      (req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio"))) {
+    console.log("[App] ⚠️ FILE UPLOAD REQUEST DETECTED:", {
+      method: req.method,
+      path: req.path,
+      url: req.url,
+      contentType: req.headers["content-type"],
+      contentLength: req.headers["content-length"],
+      hasAuth: !!req.headers.authorization,
+      timestamp: new Date().toISOString(),
+    });
+  }
+  next();
+});
+
 // Apply general rate limiting to all routes
 app.use(apiLimiter);
 
@@ -66,8 +99,14 @@ app.get("/health", (_req: Request, res: Response) => {
 // API Routes
 import authRoutes from "./routes/auth.routes";
 import categoryRoutes from "./routes/category.routes";
+import videoRoutes from "./routes/video.routes";
+import danceStyleRoutes from "./routes/dance-style.routes";
+import intensityLevelRoutes from "./routes/intensity-level.routes";
 app.use("/api/auth", authRoutes);
 app.use("/api/categories", categoryRoutes);
+app.use("/api/videos", videoRoutes);
+app.use("/api/dance-styles", danceStyleRoutes);
+app.use("/api/intensity-levels", intensityLevelRoutes);
 
 // Root route
 app.get("/", (_req: Request, res: Response) => {
@@ -78,6 +117,9 @@ app.get("/", (_req: Request, res: Response) => {
       health: "/health",
       auth: "/api/auth",
       categories: "/api/categories",
+      videos: "/api/videos",
+      danceStyles: "/api/dance-styles",
+      intensityLevels: "/api/intensity-levels",
     },
   });
 });

@@ -97,3 +97,102 @@ export const handleUploadError = (
   next();
 };
 
+// Video upload configuration (memory storage - we'll upload directly to R2)
+const videoStorage = multer.memoryStorage();
+
+// File filter for videos
+const videoFilter = (
+  _req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
+  const allowedTypes = /mp4|webm|mov|avi|mkv/;
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = /video\//.test(file.mimetype);
+
+  if (extname && mimetype) {
+    cb(null, true);
+  } else {
+    cb(
+      new Error(
+        "Only video files are allowed (mp4, webm, mov, avi, mkv). Received: " + file.mimetype
+      )
+    );
+  }
+};
+
+// Multer instance for video uploads
+export const uploadVideo = multer({
+  storage: videoStorage,
+  limits: {
+    fileSize: 500 * 1024 * 1024, // 500MB max file size for videos
+  },
+  fileFilter: videoFilter,
+});
+
+// Thumbnail upload configuration (memory storage)
+const thumbnailStorage = multer.memoryStorage();
+
+// File filter for thumbnails
+const thumbnailFilter = (
+  _req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
+  const allowedTypes = /jpeg|jpg|png|webp/;
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = allowedTypes.test(file.mimetype);
+
+  if (extname && mimetype) {
+    cb(null, true);
+  } else {
+    cb(
+      new Error(
+        "Only image files are allowed for thumbnails (jpeg, jpg, png, webp). Received: " + file.mimetype
+      )
+    );
+  }
+};
+
+// Multer instance for thumbnail uploads
+export const uploadThumbnail = multer({
+  storage: thumbnailStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max file size for thumbnails
+  },
+  fileFilter: thumbnailFilter,
+});
+
+// Audio upload configuration (memory storage)
+const audioStorage = multer.memoryStorage();
+
+// File filter for audio
+const audioFilter = (
+  _req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
+  const allowedTypes = /mp3|wav|ogg|m4a|aac/;
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = /audio\//.test(file.mimetype);
+
+  if (extname && mimetype) {
+    cb(null, true);
+  } else {
+    cb(
+      new Error(
+        "Only audio files are allowed (mp3, wav, ogg, m4a, aac). Received: " + file.mimetype
+      )
+    );
+  }
+};
+
+// Multer instance for audio uploads
+export const uploadAudio = multer({
+  storage: audioStorage,
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB max file size for audio
+  },
+  fileFilter: audioFilter,
+});
+

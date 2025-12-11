@@ -33,6 +33,7 @@ export const securityHeaders = helmet({
 /**
  * General API rate limiter
  * Limits: 100 requests per 15 minutes per IP
+ * Note: For file uploads, we use a separate limiter with higher limits
  */
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -44,8 +45,12 @@ export const apiLimiter = rateLimit({
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
   skip: (req) => {
-    // Skip rate limiting for health checks
-    return req.path === "/health";
+    // Skip rate limiting for health checks and file upload endpoints
+    // File uploads are large and should not be rate limited the same way
+    return req.path === "/health" || 
+           req.path.includes("/video") || 
+           req.path.includes("/thumbnail") || 
+           req.path.includes("/audio");
   },
 });
 

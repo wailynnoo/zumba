@@ -84,14 +84,29 @@ const envSchema = z.object({
     .transform((val) => val.split(",").map((origin) => origin.trim())),
 
   // Trust Proxy
+  // Default to true in production (Railway, Heroku, etc. are behind proxies)
   TRUST_PROXY: z
     .string()
     .optional()
-    .default("false")
-    .transform((val) => val === "true"),
+    .transform((val) => {
+      // If explicitly set, use that value
+      if (val !== undefined) {
+        return val === "true" || val === "1";
+      }
+      // Otherwise, default to true in production
+      return process.env.NODE_ENV === "production";
+    }),
 
   // Super Admin (optional, for seeding)
   SUPER_ADMIN_PASSWORD: z.string().optional(),
+
+  // Cloudflare R2 (S3-compatible storage)
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET_NAME: z.string().optional().default("fitness-dance-videos"),
+  R2_PUBLIC_URL: z.string().url().optional(), // Public URL for R2 bucket (if using custom domain)
+  R2_ENDPOINT: z.string().optional().default("https://{account_id}.r2.cloudflarestorage.com"),
 });
 
 /**
@@ -153,6 +168,12 @@ export const {
   CORS_ORIGIN,
   TRUST_PROXY,
   SUPER_ADMIN_PASSWORD,
+  R2_ACCOUNT_ID,
+  R2_ACCESS_KEY_ID,
+  R2_SECRET_ACCESS_KEY,
+  R2_BUCKET_NAME,
+  R2_PUBLIC_URL,
+  R2_ENDPOINT,
 } = env;
 
 // Helper to get JWT secret (supports both old and new naming)

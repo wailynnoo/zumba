@@ -8,6 +8,7 @@
 ## 🐛 Problem
 
 Image URLs were being constructed with duplicate domains:
+
 - **Bad URL:** `https://admin-api-production-5059.up.railway.app/admin-api-production-5059.up.railway.app/uploads/categories/...`
 - **Database:** `uploads/categories/category-123.jpg` (correct)
 - **Issue:** Domain was being duplicated when constructing the full URL
@@ -25,6 +26,7 @@ The relative path in the database might have contained a domain (from old data),
 ### **1. Enhanced Path Cleaning**
 
 Updated `normalizeImageUrl()` in `category.service.ts`:
+
 - Detects and removes domains from paths
 - Handles paths like: `admin-api-production-5059.up.railway.app/uploads/...` → `uploads/...`
 - Works with both full URLs and paths with embedded domains
@@ -32,6 +34,7 @@ Updated `normalizeImageUrl()` in `category.service.ts`:
 ### **2. Improved URL Construction**
 
 Updated `getFullImageUrl()` in `category.controller.ts`:
+
 - Cleans relative paths before constructing URLs
 - Removes any embedded domains
 - Ensures protocol is added correctly
@@ -40,6 +43,7 @@ Updated `getFullImageUrl()` in `category.controller.ts`:
 ### **3. Migration Script**
 
 Created `scripts/fix-image-urls.js`:
+
 - Fixes existing bad URLs in database
 - Extracts clean relative paths
 - Updates all categories with malformed URLs
@@ -49,15 +53,18 @@ Created `scripts/fix-image-urls.js`:
 ## 🔧 Changes Made
 
 ### **Backend - Category Service** (`src/services/category.service.ts`)
+
 - Enhanced `normalizeImageUrl()` to handle paths with embedded domains
 - Extracts clean relative path: `uploads/categories/file.jpg`
 
 ### **Backend - Category Controller** (`src/controllers/category.controller.ts`)
+
 - Enhanced `getFullImageUrl()` to clean paths before URL construction
 - Removes embedded domains
 - Ensures proper URL format
 
 ### **Migration Script** (`scripts/fix-image-urls.js`)
+
 - One-time script to fix existing bad URLs
 - Safe to run multiple times (idempotent)
 
@@ -73,6 +80,7 @@ node scripts/fix-image-urls.js
 ```
 
 This will:
+
 - Find all categories with image URLs
 - Extract clean relative paths
 - Update database with correct paths
@@ -95,11 +103,13 @@ WHERE icon_url LIKE '%.up.railway.app%'
 After the fix:
 
 1. **Database should have:**
+
    ```
    iconUrl: "uploads/categories/category-123.jpg"
    ```
 
 2. **API should return:**
+
    ```
    iconUrl: "https://admin-api-production-5059.up.railway.app/uploads/categories/category-123.jpg"
    ```
@@ -113,6 +123,7 @@ After the fix:
 ## 🧪 Testing
 
 Test cases:
+
 - [x] Upload new image → Database stores relative path
 - [x] API returns correct full URL (no duplicate domain)
 - [x] Frontend displays image correctly
@@ -133,4 +144,3 @@ Test cases:
 **Fix Complete!** ✅
 
 Image URLs are now constructed correctly without duplicate domains. Run the migration script to fix existing data.
-

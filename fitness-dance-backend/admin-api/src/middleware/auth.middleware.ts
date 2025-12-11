@@ -24,9 +24,21 @@ export async function authenticate(
   next: NextFunction
 ): Promise<void> {
   try {
+    // Log authentication attempt for video upload routes
+    if (req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
+      console.log("[Auth] Authenticating request:", {
+        method: req.method,
+        path: req.path,
+        hasAuthHeader: !!req.headers.authorization,
+      });
+    }
+
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      if (req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
+        console.log("[Auth] No token provided for:", req.path);
+      }
       res.status(401).json({
         success: false,
         message: "No token provided",
@@ -70,6 +82,14 @@ export async function authenticate(
       permissions: admin.adminRole.permissions as any,
     };
 
+    if (req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
+      console.log("[Auth] Authentication successful:", {
+        adminId: admin.id,
+        email: admin.email,
+        roleSlug: admin.adminRole.slug,
+      });
+    }
+
     next();
   } catch (error: any) {
     res.status(401).json({
@@ -86,6 +106,7 @@ export async function authenticate(
 export function requirePermission(resource: string, action: string) {
   return async (req: AdminAuthRequest, res: Response, next: NextFunction): Promise<void> => {
     if (!req.admin) {
+      console.log("[Permission] No admin in request for:", req.path);
       res.status(401).json({
         success: false,
         message: "Authentication required",
@@ -95,6 +116,7 @@ export function requirePermission(resource: string, action: string) {
 
     const permissions = req.admin.permissions;
     if (!permissions) {
+      console.log("[Permission] No permissions found for admin:", req.admin.adminId);
       res.status(403).json({
         success: false,
         message: "No permissions found",
@@ -102,8 +124,21 @@ export function requirePermission(resource: string, action: string) {
       return;
     }
 
+    // Log permission check for file upload routes
+    if (req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
+      console.log("[Permission] Checking permission:", {
+        resource,
+        action,
+        roleSlug: req.admin.roleSlug,
+        hasPermissions: !!permissions,
+      });
+    }
+
     // Super admin has all permissions
     if (req.admin.roleSlug === "super_admin") {
+      if (req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
+        console.log("[Permission] Super admin - access granted");
+      }
       next();
       return;
     }
@@ -111,6 +146,12 @@ export function requirePermission(resource: string, action: string) {
     // Check if resource exists in permissions
     const resourcePermissions = (permissions as any)[resource];
     if (!resourcePermissions || !Array.isArray(resourcePermissions)) {
+      if (req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
+        console.log("[Permission] No access to resource:", {
+          resource,
+          hasResourcePerms: !!resourcePermissions,
+        });
+      }
       res.status(403).json({
         success: false,
         message: `No access to ${resource}`,
@@ -120,11 +161,22 @@ export function requirePermission(resource: string, action: string) {
 
     // Check if action is allowed
     if (!resourcePermissions.includes(action)) {
+      if (req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
+        console.log("[Permission] No permission for action:", {
+          resource,
+          action,
+          allowedActions: resourcePermissions,
+        });
+      }
       res.status(403).json({
         success: false,
         message: `No permission to ${action} ${resource}`,
       });
       return;
+    }
+
+    if (req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
+      console.log("[Permission] Permission granted - proceeding to handler");
     }
 
     next();
