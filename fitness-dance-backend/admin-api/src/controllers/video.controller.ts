@@ -4,6 +4,7 @@
 import { Request, Response } from "express";
 import { videoService, createVideoSchema, updateVideoSchema } from "../services/video.service";
 import { r2StorageService } from "../services/r2-storage.service";
+import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { z } from "zod";
 
 export class VideoController {
@@ -506,6 +507,227 @@ export class VideoController {
       res.status(400).json({
         success: false,
         message: error.message || "Failed to delete audio file",
+      });
+    }
+  }
+
+  /**
+   * Stream video file (with range request support)
+   * GET /api/videos/:id/stream
+   * Admin users don't need subscription check
+   */
+  async streamVideo(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      // Get video from database
+      const video = await videoService.getVideoById(id);
+
+      if (!video.cloudflareVideoId) {
+        res.status(404).json({
+          success: false,
+          message: "Video file not found",
+        });
+        return;
+      }
+
+      // Extract key from URL
+      const key = r2StorageService.extractKey(video.cloudflareVideoId);
+      const s3Client = r2StorageService.getS3Client();
+      const bucketName = r2StorageService.getBucketName();
+
+      // Parse Range header for video seeking
+      const range = req.headers.range;
+      let start = 0;
+      let end: number | undefined;
+
+      // Get file metadata first using HeadObject (more efficient)
+      const headCommand = new HeadObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+      });
+
+      const headResponse = await s3Client.send(headCommand);
+      const contentLength = headResponse.ContentLength || 0;
+      const contentType = headResponse.ContentType || "video/mp4";
+
+      // Parse range if provided
+      if (range) {
+        const parts = range.replace(/bytes=/, "").split("-");
+        start = parseInt(parts[0], 10);
+        end = parts[1] ? parseInt(parts[1], 10) : contentLength - 1;
+      } else {
+        end = contentLength - 1;
+      }
+
+      // Ensure valid range
+      if (start >= contentLength || end >= contentLength) {
+        res.status(416).json({
+          success: false,
+          message: "Range Not Satisfiable",
+        });
+        return;
+      }
+
+      // Create command with range
+      const command = new GetObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+        Range: `bytes=${start}-${end}`,
+      });
+
+      // Stream the video
+      const response = await s3Client.send(command);
+
+      // Set headers for video streaming
+      const chunkSize = end - start + 1;
+      res.status(range ? 206 : 200); // 206 Partial Content for range requests
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${contentLength}`);
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Content-Length", chunkSize);
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "public, max-age=3600"); // Cache for 1 hour
+
+      // Stream the body to response
+      if (response.Body) {
+        // AWS SDK v3 returns Body as ReadableStream (web standard)
+        // Convert to buffer chunks and send
+        const stream = response.Body as any;
+        
+        // Handle ReadableStream (web standard)
+        if (stream && typeof stream.getReader === 'function') {
+          const reader = stream.getReader();
+          const pump = async () => {
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                  res.end();
+                  break;
+                }
+                res.write(Buffer.from(value));
+              }
+            } catch (error) {
+              console.error("[Video Controller] Stream error:", error);
+              if (!res.headersSent) {
+                res.status(500).json({
+                  success: false,
+                  message: "Failed to stream video",
+                });
+              }
+            }
+          };
+          pump();
+        } else if (stream && typeof stream.pipe === 'function') {
+          // If it's a Node.js stream, pipe directly
+          stream.pipe(res);
+        } else {
+          // Fallback: convert to buffer
+          const chunks: Uint8Array[] = [];
+          for await (const chunk of stream as any) {
+            chunks.push(chunk);
+          }
+          const buffer = Buffer.concat(chunks);
+          res.send(buffer);
+        }
+      } else {
+        res.status(500).json({
+          success: false,
+          message: "Failed to stream video",
+        });
+      }
+    } catch (error: any) {
+      console.error("[Video Controller] Error streaming video:", error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          message: error.message || "Failed to stream video",
+        });
+      }
+    }
+  }
+
+  /**
+   * Get video watch URL (signed URL for direct R2 access)
+   * GET /api/videos/:id/watch-url
+   * Admin users don't need subscription check
+   * Returns signed URL that expires in 1 hour
+   */
+  async getVideoWatchUrl(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      // Get video from database
+      const video = await videoService.getVideoById(id);
+
+      if (!video.cloudflareVideoId) {
+        res.status(404).json({
+          success: false,
+          message: "Video file not found",
+        });
+        return;
+      }
+
+      // Generate signed URL (expires in 1 hour)
+      const signedUrl = await r2StorageService.getSignedUrl(
+        video.cloudflareVideoId,
+        3600 // 1 hour
+      );
+
+      res.status(200).json({
+        success: true,
+        data: {
+          watchUrl: signedUrl,
+          expiresIn: 3600, // seconds
+        },
+      });
+    } catch (error: any) {
+      console.error("[Video Controller] Error generating watch URL:", error);
+      res.status(500).json({
+        success: false,
+        message: error.message || "Failed to generate watch URL",
+      });
+    }
+  }
+
+  /**
+   * Get video thumbnail signed URL
+   * GET /api/videos/:id/thumbnail-url
+   * Returns a signed URL for the video thumbnail (expires in 1 hour)
+   */
+  async getThumbnailUrl(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      // Get video from database
+      const video = await videoService.getVideoById(id);
+
+      if (!video.thumbnailUrl) {
+        res.status(404).json({
+          success: false,
+          message: "Video has no thumbnail",
+        });
+        return;
+      }
+
+      // Generate signed URL (expires in 1 hour)
+      const signedUrl = await r2StorageService.getSignedUrl(
+        video.thumbnailUrl,
+        3600 // 1 hour
+      );
+
+      res.status(200).json({
+        success: true,
+        data: {
+          thumbnailUrl: signedUrl,
+          expiresIn: 3600,
+        },
+      });
+    } catch (error: any) {
+      console.error("[Video Controller] Error generating thumbnail signed URL:", error);
+      res.status(500).json({
+        success: false,
+        message: error.message || "Failed to generate thumbnail URL",
       });
     }
   }

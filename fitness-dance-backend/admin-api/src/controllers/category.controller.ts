@@ -4,33 +4,31 @@
 import { Request, Response } from "express";
 import { categoryService, createCategorySchema, updateCategorySchema } from "../services/category.service";
 import { fileUploadService } from "../services/file-upload.service";
+import { r2StorageService } from "../services/r2-storage.service";
 import { z } from "zod";
 
 /**
  * Convert relative image path to full URL for API responses
+ * Returns R2 keys as-is (frontend will fetch signed URLs)
  */
 function getFullImageUrl(relativePath: string | null): string | null {
   if (!relativePath) return null;
   
-  // If already a full URL, return as is (but clean up if it has duplicate domain)
+  // If already a full URL (signed URL or external URL), return as is
   if (relativePath.startsWith("http://") || relativePath.startsWith("https://")) {
-    // Check for duplicate domain in URL
-    try {
-      const url = new URL(relativePath);
-      // If pathname contains domain, extract just the path part
-      if (url.pathname.includes(".up.railway.app") || url.pathname.includes(".railway.app")) {
-        const pathMatch = url.pathname.match(/\/(uploads\/.*)$/);
-        if (pathMatch) {
-          // Reconstruct URL with clean path
-          return `${url.protocol}//${url.host}/${pathMatch[1]}`;
-        }
-      }
-      return relativePath;
-    } catch {
-      return relativePath;
-    }
+    return relativePath;
   }
   
+  // If it's an R2 key (starts with categories/, videos/, thumbnails/, audio/), return as-is
+  // Frontend will detect this and fetch a signed URL
+  if (relativePath.startsWith("categories/") || 
+      relativePath.startsWith("videos/") || 
+      relativePath.startsWith("thumbnails/") || 
+      relativePath.startsWith("audio/")) {
+    return relativePath;
+  }
+  
+  // Legacy: Handle old local file paths (uploads/categories/...)
   // Clean relative path (remove any domain that might be in it)
   let cleanPath = relativePath;
   
@@ -59,7 +57,7 @@ function getFullImageUrl(relativePath: string | null): string | null {
     }
   }
   
-  // Convert relative path to full URL
+  // Convert relative path to full URL (for legacy local files)
   const port = process.env.PORT || 3002;
   let baseUrl = process.env.BASE_URL || process.env.RAILWAY_PUBLIC_DOMAIN || `http://localhost:${port}`;
   
@@ -337,6 +335,54 @@ export class CategoryController {
       res.status(400).json({
         success: false,
         message: error.message || "Failed to delete image",
+      });
+    }
+  }
+
+  /**
+   * Get category image signed URL
+   * GET /api/categories/:id/image-url
+   * Returns a signed URL for the category image (expires in 1 hour)
+   */
+  async getCategoryImageUrl(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const category = await categoryService.getCategoryById(id);
+
+      if (!category) {
+        res.status(404).json({
+          success: false,
+          message: "Category not found",
+        });
+        return;
+      }
+
+      if (!category.iconUrl) {
+        res.status(404).json({
+          success: false,
+          message: "Category has no image",
+        });
+        return;
+      }
+
+      // Generate signed URL (expires in 1 hour)
+      const signedUrl = await r2StorageService.getSignedUrl(
+        category.iconUrl,
+        3600 // 1 hour
+      );
+
+      res.status(200).json({
+        success: true,
+        data: {
+          imageUrl: signedUrl,
+          expiresIn: 3600,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error generating category image signed URL:", error);
+      res.status(500).json({
+        success: false,
+        message: error.message || "Failed to generate image URL",
       });
     }
   }

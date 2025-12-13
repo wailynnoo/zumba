@@ -64,5 +64,8 @@ router.post(
 // Delete category image - DELETE /api/categories/:id/image
 router.delete("/:id/image", requirePermission("categories", "update"), categoryController.deleteCategoryImage.bind(categoryController));
 
+// Get category image signed URL - GET /api/categories/:id/image-url
+router.get("/:id/image-url", requirePermission("categories", "read"), categoryController.getCategoryImageUrl.bind(categoryController));
+
 export default router;
 

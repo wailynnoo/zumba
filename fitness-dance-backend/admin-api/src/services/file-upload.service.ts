@@ -4,6 +4,7 @@
 import fs from "fs";
 import path from "path";
 import prisma from "../config/database";
+import { r2StorageService } from "./r2-storage.service";
 
 export class FileUploadService {
   /**
@@ -22,13 +23,6 @@ export class FileUploadService {
     }
     
     return baseUrl;
-  }
-
-  /**
-   * Get relative path for storing in database
-   */
-  private getRelativePath(fileName: string): string {
-    return `uploads/categories/${fileName}`;
   }
 
   /**
@@ -79,6 +73,7 @@ export class FileUploadService {
 
   /**
    * Upload category image and update category record
+   * Uploads to R2 (private bucket) and stores R2 key in database
    */
   async uploadCategoryImage(file: Express.Multer.File, categoryId: string) {
     // Verify category exists
@@ -97,37 +92,55 @@ export class FileUploadService {
       throw new Error("Category not found");
     }
 
-    // Delete old image if it exists
+    // Delete old image from R2 if it exists
     if (category.iconUrl) {
-      await this.deleteCategoryImageFile(category.iconUrl);
+      try {
+        await r2StorageService.deleteFile(category.iconUrl);
+      } catch (error) {
+        console.error("Error deleting old category image from R2:", error);
+        // Continue even if deletion fails
+      }
     }
 
-    // Generate relative path for database storage
-    const fileName = path.basename(file.path);
-    const relativePath = this.getRelativePath(fileName);
-    
-    // Generate full URL for response (frontend will use this)
-    // getBaseUrl() already includes /uploads, so just append the rest
-    const baseUrl = this.getBaseUrl();
-    const fullImageUrl = `${baseUrl}/categories/${fileName}`;
+    if (!file.path) {
+      throw new Error("File path not available");
+    }
 
-    // Update category with relative path (not full URL)
+    // Upload to R2 (returns R2 key, not public URL)
+    const fileName = path.basename(file.path);
+    const r2Key = await r2StorageService.uploadCategoryImage(
+      file.path,
+      fileName,
+      file.mimetype
+    );
+
+    // Delete local file after uploading to R2
+    try {
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+    } catch (error) {
+      console.error("Error deleting local file after R2 upload:", error);
+    }
+
+    // Update category with R2 key (not a public URL since bucket is private)
     const updatedCategory = await prisma.videoCategory.update({
       where: { id: categoryId },
-      data: { iconUrl: relativePath },
+      data: { iconUrl: r2Key },
     });
 
     return {
       category: {
         ...updatedCategory,
-        iconUrl: fullImageUrl, // Return full URL in response
+        iconUrl: r2Key, // Return R2 key
       },
-      imageUrl: fullImageUrl, // Return full URL for convenience
+      imageUrl: r2Key, // Return R2 key (frontend will get signed URL when needed)
     };
   }
 
   /**
    * Delete category image
+   * Deletes from R2 if it's an R2 key, otherwise tries local filesystem (legacy)
    */
   async deleteCategoryImage(categoryId: string) {
     // Get category
@@ -146,8 +159,18 @@ export class FileUploadService {
       throw new Error("Category has no image to delete");
     }
 
-    // Delete file from filesystem
-    await this.deleteCategoryImageFile(category.iconUrl);
+    // Delete from R2 if it's an R2 key (starts with "categories/")
+    if (category.iconUrl.startsWith("categories/")) {
+      try {
+        await r2StorageService.deleteFile(category.iconUrl);
+      } catch (error) {
+        console.error("Error deleting category image from R2:", error);
+        // Continue even if deletion fails
+      }
+    } else {
+      // Legacy: Try to delete from local filesystem
+      await this.deleteCategoryImageFile(category.iconUrl);
+    }
 
     // Update category (set iconUrl to null)
     const updatedCategory = await prisma.videoCategory.update({

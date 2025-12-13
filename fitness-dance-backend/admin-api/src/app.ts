@@ -41,7 +41,8 @@ app.use(
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "Range"], // Range header for video streaming
+    exposedHeaders: ["Content-Range", "Accept-Ranges", "Content-Length"], // Expose headers for video streaming
   })
 );
 

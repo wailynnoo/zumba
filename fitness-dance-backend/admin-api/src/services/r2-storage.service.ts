@@ -143,19 +143,29 @@ export class R2StorageService {
    * @param file - Image buffer
    * @param fileName - File name (will be prefixed with thumbnails/)
    * @param contentType - MIME type (e.g., image/jpeg)
-   * @returns Public URL of uploaded file
+   * @returns R2 key (e.g., "thumbnails/thumbnail-xxx.jpg") - not a public URL since bucket is private
    */
   async uploadThumbnail(
     file: Buffer | Uint8Array,
     fileName: string,
     contentType: string = "image/jpeg"
   ): Promise<string> {
+    console.log("[R2 Storage] uploadThumbnail called with:", {
+      fileName,
+      contentType,
+      fileSize: file.length,
+      bucketName: this.bucketName,
+    });
+
     if (!this.s3Client) {
-      throw new Error("R2 storage is not configured");
+      console.error("[R2 Storage] S3 client is null - R2 not configured");
+      throw new Error("R2 storage is not configured. Please set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY");
     }
 
     const cleanFileName = fileName.startsWith("/") ? fileName.substring(1) : fileName;
     const key = `thumbnails/${cleanFileName}`;
+
+    console.log("[R2 Storage] Uploading thumbnail to key:", key);
 
     try {
       const command = new PutObjectCommand({
@@ -167,18 +177,83 @@ export class R2StorageService {
 
       await this.s3Client.send(command);
 
-      // Return public URL
-      if (this.publicUrl) {
-        return `${this.publicUrl.replace(/\/$/, "")}/${key}`;
-      } else {
-        throw new Error(
-          "R2_PUBLIC_URL is not configured. Please set R2_PUBLIC_URL environment variable " +
-          "to your R2 public URL (e.g., https://pub-xxx.r2.dev)."
-        );
-      }
+      console.log("[R2 Storage] Thumbnail uploaded successfully to:", key);
+      
+      // Return the R2 key (not a public URL since bucket is private)
+      return key;
     } catch (error: any) {
-      console.error("Error uploading thumbnail to R2:", error);
+      console.error("[R2 Storage] Error uploading thumbnail to R2:", error);
+      console.error("[R2 Storage] Error details:", {
+        message: error.message,
+        code: error.Code,
+        requestId: error.$metadata?.requestId,
+        statusCode: error.$metadata?.httpStatusCode,
+      });
       throw new Error(`Failed to upload thumbnail to R2: ${error.message}`);
+    }
+  }
+
+  /**
+   * Upload category image to R2
+   * @param file - Image buffer or file path
+   * @param fileName - File name (will be prefixed with categories/)
+   * @param contentType - MIME type (e.g., image/jpeg)
+   * @returns R2 key (e.g., "categories/category-xxx.jpg") - not a public URL since bucket is private
+   */
+  async uploadCategoryImage(
+    file: Buffer | Uint8Array | string,
+    fileName: string,
+    contentType: string = "image/jpeg"
+  ): Promise<string> {
+    console.log("[R2 Storage] uploadCategoryImage called with:", {
+      fileName,
+      contentType,
+      fileType: typeof file === "string" ? "path" : "buffer",
+      bucketName: this.bucketName,
+    });
+
+    if (!this.s3Client) {
+      console.error("[R2 Storage] S3 client is null - R2 not configured");
+      throw new Error("R2 storage is not configured. Please set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY");
+    }
+
+    const cleanFileName = fileName.startsWith("/") ? fileName.substring(1) : fileName;
+    const key = `categories/${cleanFileName}`;
+
+    console.log("[R2 Storage] Uploading category image to key:", key);
+
+    try {
+      // If file is a path string, read it as buffer
+      let fileBuffer: Buffer | Uint8Array;
+      if (typeof file === "string") {
+        const fs = require("fs");
+        fileBuffer = fs.readFileSync(file);
+      } else {
+        fileBuffer = file;
+      }
+
+      const command = new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+        Body: fileBuffer,
+        ContentType: contentType,
+      });
+
+      await this.s3Client.send(command);
+
+      console.log("[R2 Storage] Category image uploaded successfully to:", key);
+      
+      // Return the R2 key (not a public URL since bucket is private)
+      return key;
+    } catch (error: any) {
+      console.error("[R2 Storage] Error uploading category image to R2:", error);
+      console.error("[R2 Storage] Error details:", {
+        message: error.message,
+        code: error.Code,
+        requestId: error.$metadata?.requestId,
+        statusCode: error.$metadata?.httpStatusCode,
+      });
+      throw new Error(`Failed to upload category image to R2: ${error.message}`);
     }
   }
 
@@ -242,13 +317,13 @@ export class R2StorageService {
         // Extract key from URL
         const urlParts = fileUrl.split("/");
         const keyIndex = urlParts.findIndex(part => 
-          part === "videos" || part === "thumbnails" || part === "audio"
+          part === "videos" || part === "thumbnails" || part === "audio" || part === "categories"
         );
         if (keyIndex >= 0) {
           key = urlParts.slice(keyIndex).join("/");
         } else {
           // Try to extract from end
-          const match = fileUrl.match(/(videos|thumbnails|audio)\/.+$/);
+          const match = fileUrl.match(/(videos|thumbnails|audio|categories)\/.+$/);
           if (match) {
             key = match[0];
           }
@@ -284,12 +359,12 @@ export class R2StorageService {
       if (fileUrl.includes("/")) {
         const urlParts = fileUrl.split("/");
         const keyIndex = urlParts.findIndex(part => 
-          part === "videos" || part === "thumbnails" || part === "audio"
+          part === "videos" || part === "thumbnails" || part === "audio" || part === "categories"
         );
         if (keyIndex >= 0) {
           key = urlParts.slice(keyIndex).join("/");
         } else {
-          const match = fileUrl.match(/(videos|thumbnails|audio)\/.+$/);
+          const match = fileUrl.match(/(videos|thumbnails|audio|categories)\/.+$/);
           if (match) {
             key = match[0];
           }
@@ -320,6 +395,76 @@ export class R2StorageService {
     const random = Math.round(Math.random() * 1e9);
     const prefixPart = prefix ? `${prefix}-` : "";
     return `${prefixPart}${timestamp}-${random}${ext}`;
+  }
+
+  /**
+   * Get S3 client (for streaming)
+   * @returns S3Client instance
+   */
+  getS3Client(): S3Client {
+    if (!this.s3Client) {
+      throw new Error("R2 storage is not configured");
+    }
+    return this.s3Client;
+  }
+
+  /**
+   * Get bucket name
+   * @returns Bucket name
+   */
+  getBucketName(): string {
+    return this.bucketName;
+  }
+
+  /**
+   * Extract key from URL or return key as-is
+   * @param fileUrl - Full URL or key
+   * @returns R2 key (e.g., "videos/file.mp4")
+   */
+  extractKey(fileUrl: string): string {
+    if (fileUrl.includes("/")) {
+      const urlParts = fileUrl.split("/");
+      const keyIndex = urlParts.findIndex(part => 
+        part === "videos" || part === "thumbnails" || part === "audio" || part === "categories"
+      );
+      if (keyIndex >= 0) {
+        return urlParts.slice(keyIndex).join("/");
+      } else {
+        const match = fileUrl.match(/(videos|thumbnails|audio|categories)\/.+$/);
+        if (match) {
+          return match[0];
+        }
+      }
+    }
+    return fileUrl;
+  }
+
+  /**
+   * Get object metadata (for Content-Length, Content-Type, etc.)
+   * @param fileUrl - Full URL or key of file
+   * @returns Object metadata
+   */
+  async getObjectMetadata(fileUrl: string) {
+    if (!this.s3Client) {
+      throw new Error("R2 storage is not configured");
+    }
+
+    const key = this.extractKey(fileUrl);
+    const command = new GetObjectCommand({
+      Bucket: this.bucketName,
+      Key: key,
+    });
+
+    // Use HeadObject would be better, but GetObjectCommand works too
+    // We'll just get the response metadata
+    const response = await this.s3Client.send(command);
+    
+    return {
+      contentLength: response.ContentLength,
+      contentType: response.ContentType || "video/mp4",
+      lastModified: response.LastModified,
+      etag: response.ETag,
+    };
   }
 }
 

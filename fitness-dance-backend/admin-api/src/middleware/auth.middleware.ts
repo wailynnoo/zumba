@@ -30,12 +30,25 @@ export async function authenticate(
         method: req.method,
         path: req.path,
         hasAuthHeader: !!req.headers.authorization,
+        hasTokenParam: !!req.query.token,
       });
     }
 
-    const authHeader = req.headers.authorization;
+    // For video streaming, also check query parameter (since HTML video elements can't send headers)
+    const isStreamingRequest = req.path.includes("/stream");
+    let token: string | null = null;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    // First try Authorization header
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.substring(7);
+    }
+    // For streaming, also check query parameter
+    else if (isStreamingRequest && req.query.token && typeof req.query.token === "string") {
+      token = req.query.token;
+    }
+
+    if (!token) {
       if (req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
         console.log("[Auth] No token provided for:", req.path);
       }
@@ -45,8 +58,6 @@ export async function authenticate(
       });
       return;
     }
-
-    const token = authHeader.substring(7);
     const payload = verifyAccessToken(token);
 
     // Verify admin exists and is active

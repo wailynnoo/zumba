@@ -112,5 +112,29 @@ router.delete("/:id/thumbnail", requirePermission("videos", "update"), videoCont
 // Delete audio file - DELETE /api/videos/:id/audio
 router.delete("/:id/audio", requirePermission("videos", "update"), videoController.deleteAudio.bind(videoController));
 
+// Stream video file - GET /api/videos/:id/stream
+// Admin users can stream videos (no subscription check needed)
+router.get(
+  "/:id/stream",
+  requirePermission("videos", "read"),
+  videoController.streamVideo.bind(videoController)
+);
+
+// Get video watch URL (signed URL) - GET /api/videos/:id/watch-url
+// Returns signed URL for direct R2 access (faster than streaming through API)
+router.get(
+  "/:id/watch-url",
+  requirePermission("videos", "read"),
+  videoController.getVideoWatchUrl.bind(videoController)
+);
+
+// Get video thumbnail signed URL - GET /api/videos/:id/thumbnail-url
+// Returns signed URL for thumbnail image (expires in 1 hour)
+router.get(
+  "/:id/thumbnail-url",
+  requirePermission("videos", "read"),
+  videoController.getThumbnailUrl.bind(videoController)
+);
+
 export default router;
 
