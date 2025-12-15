@@ -28,10 +28,8 @@ router.get(
       categoryId: z.string().uuid().optional(),
       subcategoryId: z.string().uuid().optional(),
       collectionId: z.string().uuid().optional(),
-      danceStyleId: z.string().uuid().optional(),
-      intensityLevelId: z.string().uuid().optional(),
       isPublished: z.coerce.boolean().optional(),
-      videoType: z.enum(["premium", "youtube_short"]).optional(),
+      videoType: z.enum(["premium", "free"]).optional(), // 'premium' = requires subscription, 'free' = no subscription needed
       search: z.string().optional(),
     }).passthrough()
   ),
@@ -128,12 +126,28 @@ router.get(
   videoController.getVideoWatchUrl.bind(videoController)
 );
 
+// Get batch thumbnail signed URLs - POST /api/videos/thumbnail-urls
+// Returns signed URLs for multiple video thumbnails (expires in 1 hour)
+router.post(
+  "/thumbnail-urls",
+  requirePermission("videos", "read"),
+  videoController.getBatchThumbnailUrls.bind(videoController)
+);
+
 // Get video thumbnail signed URL - GET /api/videos/:id/thumbnail-url
 // Returns signed URL for thumbnail image (expires in 1 hour)
 router.get(
   "/:id/thumbnail-url",
   requirePermission("videos", "read"),
   videoController.getThumbnailUrl.bind(videoController)
+);
+
+// Get video audio signed URL - GET /api/videos/:id/audio-url
+// Returns signed URL for audio file (expires in 1 hour)
+router.get(
+  "/:id/audio-url",
+  requirePermission("videos", "read"),
+  videoController.getAudioUrl.bind(videoController)
 );
 
 export default router;

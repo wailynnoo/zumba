@@ -57,6 +57,50 @@ export const uploadCategoryImage = multer({
   fileFilter: categoryImageFilter,
 });
 
+// Collection thumbnail upload configuration
+const collectionThumbnailStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const uploadPath = path.join(process.cwd(), "uploads", "collections");
+    ensureUploadDir(uploadPath);
+    cb(null, uploadPath);
+  },
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, `collection-${uniqueSuffix}${ext}`);
+  },
+});
+
+// File filter for collection thumbnails
+const collectionThumbnailFilter = (
+  _req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
+  const allowedTypes = /jpeg|jpg|png|webp/;
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = allowedTypes.test(file.mimetype);
+
+  if (extname && mimetype) {
+    cb(null, true);
+  } else {
+    cb(
+      new Error(
+        "Only image files are allowed (jpeg, jpg, png, webp). Received: " + file.mimetype
+      )
+    );
+  }
+};
+
+// Multer instance for collection thumbnails
+export const uploadCollectionThumbnail = multer({
+  storage: collectionThumbnailStorage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB max file size
+  },
+  fileFilter: collectionThumbnailFilter,
+});
+
 // Error handler for multer errors
 export const handleUploadError = (
   err: any,

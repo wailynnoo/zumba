@@ -20,8 +20,6 @@ export class VideoController {
       const categoryId = validatedQuery.categoryId as string | undefined;
       const subcategoryId = validatedQuery.subcategoryId as string | undefined;
       const collectionId = validatedQuery.collectionId as string | undefined;
-      const danceStyleId = validatedQuery.danceStyleId as string | undefined;
-      const intensityLevelId = validatedQuery.intensityLevelId as string | undefined;
       const isPublished = validatedQuery.isPublished as boolean | undefined;
       const videoType = validatedQuery.videoType as string | undefined;
       const search = validatedQuery.search as string | undefined;
@@ -32,8 +30,6 @@ export class VideoController {
         categoryId,
         subcategoryId,
         collectionId,
-        danceStyleId,
-        intensityLevelId,
         isPublished,
         videoType,
         search,
@@ -668,6 +664,16 @@ export class VideoController {
         return;
       }
 
+      // Check if file exists in R2 before generating signed URL
+      const fileExists = await r2StorageService.fileExists(video.cloudflareVideoId);
+      if (!fileExists) {
+        res.status(404).json({
+          success: false,
+          message: "Video file not found in storage",
+        });
+        return;
+      }
+
       // Generate signed URL (expires in 1 hour)
       const signedUrl = await r2StorageService.getSignedUrl(
         video.cloudflareVideoId,
@@ -710,6 +716,16 @@ export class VideoController {
         return;
       }
 
+      // Check if file exists in R2 before generating signed URL
+      const fileExists = await r2StorageService.fileExists(video.thumbnailUrl);
+      if (!fileExists) {
+        res.status(404).json({
+          success: false,
+          message: "Thumbnail file not found in storage",
+        });
+        return;
+      }
+
       // Generate signed URL (expires in 1 hour)
       const signedUrl = await r2StorageService.getSignedUrl(
         video.thumbnailUrl,
@@ -728,6 +744,120 @@ export class VideoController {
       res.status(500).json({
         success: false,
         message: error.message || "Failed to generate thumbnail URL",
+      });
+    }
+  }
+
+  /**
+   * Get batch thumbnail signed URLs
+   * POST /api/videos/thumbnail-urls
+   * Returns signed URLs for multiple video thumbnails (expires in 1 hour)
+   */
+  async getBatchThumbnailUrls(req: Request, res: Response): Promise<void> {
+    try {
+      const { videoIds } = req.body;
+
+      if (!Array.isArray(videoIds) || videoIds.length === 0) {
+        res.status(400).json({
+          success: false,
+          message: "videoIds must be a non-empty array",
+        });
+        return;
+      }
+
+      // Limit batch size to prevent abuse
+      if (videoIds.length > 100) {
+        res.status(400).json({
+          success: false,
+          message: "Maximum 100 video IDs allowed per request",
+        });
+        return;
+      }
+
+      // Get all videos at once
+      const videos = await videoService.getVideosByIds(videoIds);
+
+      // Generate signed URLs for videos that have thumbnails
+      const thumbnailUrls: Record<string, string> = {};
+      const promises = videos
+        .filter((video: any) => video.thumbnailUrl)
+        .map(async (video: any) => {
+          try {
+            // Check if file exists in R2
+            const fileExists = await r2StorageService.fileExists(video.thumbnailUrl!);
+            if (fileExists) {
+              const signedUrl = await r2StorageService.getSignedUrl(video.thumbnailUrl!, 3600);
+              thumbnailUrls[video.id] = signedUrl;
+            }
+          } catch (error) {
+            console.error(`[Video Controller] Error generating thumbnail URL for video ${video.id}:`, error);
+            // Skip this video, don't add to result
+          }
+        });
+
+      await Promise.all(promises);
+
+      res.status(200).json({
+        success: true,
+        data: thumbnailUrls,
+      });
+    } catch (error: any) {
+      console.error("[Video Controller] Error generating batch thumbnail URLs:", error);
+      res.status(500).json({
+        success: false,
+        message: error.message || "Failed to generate batch thumbnail URLs",
+      });
+    }
+  }
+
+  /**
+   * Get video audio signed URL
+   * GET /api/videos/:id/audio-url
+   * Returns a signed URL for the video audio file (expires in 1 hour)
+   */
+  async getAudioUrl(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      // Get video from database
+      const video = await videoService.getVideoById(id);
+
+      if (!video.audioUrl) {
+        res.status(404).json({
+          success: false,
+          message: "Video has no audio file",
+        });
+        return;
+      }
+
+      // Check if file exists in R2 before generating signed URL
+      const fileExists = await r2StorageService.fileExists(video.audioUrl);
+      if (!fileExists) {
+        res.status(404).json({
+          success: false,
+          message: "Audio file not found in storage",
+        });
+        return;
+      }
+
+      // Generate signed URL (expires in 1 hour)
+      const signedUrl = await r2StorageService.getSignedUrl(
+        video.audioUrl,
+        3600 // 1 hour
+      );
+
+      res.status(200).json({
+        success: true,
+        data: {
+          audioUrl: signedUrl,
+          expiresIn: 3600,
+        },
+      });
+    } catch (error: any) {
+      console.error("[Video Controller] Error generating audio signed URL:", error);
+      res.status(500).json({
+        success: false,
+        message: error.message || "Failed to generate audio URL",
       });
     }
   }

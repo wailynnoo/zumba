@@ -1,6 +1,10 @@
 /**
  * Run migration SQL directly via Node.js
- * This script can be executed via Railway CLI: railway run --service admin-api node run-migration.js
+ *
+ * IMPORTANT: Run via Postgres service to get TCP proxy variables automatically:
+ *   railway run --service Postgres node run-migration.js
+ *
+ * Running via admin-api service will NOT provide RAILWAY_TCP_PROXY_DOMAIN/PORT
  */
 
 const { Client } = require("pg");
@@ -8,25 +12,117 @@ const fs = require("fs");
 const path = require("path");
 
 // Get DATABASE_URL from environment
-// Try to use public URL if internal URL is provided
-let databaseUrl = process.env.DATABASE_URL || process.env.DATABASE_PUBLIC_URL;
+// Try DATABASE_PUBLIC_URL first (if available, it's already a public URL)
+let databaseUrl = process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL;
 
-// If DATABASE_URL contains internal Railway URL, construct public URL from TCP proxy
+// Debug: Log available environment variables (without sensitive data)
+console.log("🔍 Environment check:");
+console.log(
+  `   DATABASE_URL: ${
+    process.env.DATABASE_URL
+      ? "✅ Set (length: " + process.env.DATABASE_URL.length + ")"
+      : "❌ Not set"
+  }`
+);
+console.log(
+  `   DATABASE_PUBLIC_URL: ${
+    process.env.DATABASE_PUBLIC_URL ? "✅ Set" : "❌ Not set"
+  }`
+);
+console.log(
+  `   RAILWAY_TCP_PROXY_DOMAIN: ${
+    process.env.RAILWAY_TCP_PROXY_DOMAIN || "❌ Not set"
+  }`
+);
+console.log(
+  `   RAILWAY_TCP_PROXY_PORT: ${
+    process.env.RAILWAY_TCP_PROXY_PORT || "❌ Not set"
+  }`
+);
+
+// If DATABASE_URL contains internal Railway URL, we MUST construct public URL
+// Internal URLs don't work when running via Railway CLI from local machine
 if (databaseUrl && databaseUrl.includes("postgres.railway.internal")) {
-  const tcpProxyDomain =
-    process.env.RAILWAY_TCP_PROXY_DOMAIN || "nozomi.proxy.rlwy.net";
-  const tcpProxyPort = process.env.RAILWAY_TCP_PROXY_PORT || "56096";
-  const pgUser = process.env.PGUSER || "postgres";
-  const pgPassword = process.env.PGPASSWORD;
-  const pgDatabase = process.env.PGDATABASE || "railway";
+  console.log("🔍 Detected internal Railway URL, constructing public URL...");
 
-  if (pgPassword) {
-    databaseUrl = `postgresql://${pgUser}:${pgPassword}@${tcpProxyDomain}:${tcpProxyPort}/${pgDatabase}`;
-    console.log("📡 Using TCP proxy connection (public URL)");
-  } else {
-    console.error("❌ Cannot construct public URL: PGPASSWORD not found");
+  const tcpProxyDomain = process.env.RAILWAY_TCP_PROXY_DOMAIN;
+  const tcpProxyPort = process.env.RAILWAY_TCP_PROXY_PORT;
+
+  // Extract credentials from DATABASE_URL
+  let pgPassword = process.env.PGPASSWORD;
+  let pgUser = process.env.PGUSER || "postgres";
+  let pgDatabase = process.env.PGDATABASE || "railway";
+
+  // Always try to extract from DATABASE_URL first
+  if (databaseUrl) {
+    try {
+      const url = new URL(databaseUrl);
+      pgPassword = url.password || pgPassword;
+      pgUser = url.username || pgUser;
+      pgDatabase = url.pathname.slice(1) || pgDatabase;
+      console.log(
+        `✅ Extracted credentials from DATABASE_URL (user: ${pgUser}, db: ${pgDatabase})`
+      );
+    } catch (e) {
+      // If URL parsing fails, try regex extraction
+      // Format: postgresql://user:password@host:port/database
+      const match = databaseUrl.match(
+        /postgresql:\/\/(?:([^:]+):)?([^@]+)@[^\/]+\/(.+)/
+      );
+      if (match) {
+        pgUser = match[1] || pgUser;
+        const userPass = match[2];
+        // Check if it's just password or user:password
+        if (userPass.includes(":")) {
+          const parts = userPass.split(":");
+          pgUser = parts[0];
+          pgPassword = parts.slice(1).join(":"); // In case password contains ':'
+        } else {
+          // If no colon, it might be just the password (unlikely but handle it)
+          pgPassword = userPass;
+        }
+        pgDatabase = match[3] || pgDatabase;
+        console.log(
+          `✅ Extracted credentials via regex (user: ${pgUser}, db: ${pgDatabase})`
+        );
+      }
+    }
+  }
+
+  // Check if we have all required info for TCP proxy
+  if (!tcpProxyDomain || !tcpProxyPort) {
+    console.error(
+      "❌ RAILWAY_TCP_PROXY_DOMAIN or RAILWAY_TCP_PROXY_PORT not found"
+    );
+    console.error("   These are required when using internal Railway URLs");
+    console.error("");
+    console.error("   Try one of these solutions:");
+    console.error(
+      "   1. Run via Postgres service: railway run --service Postgres node run-migration.js"
+    );
+    console.error("   2. Or get TCP proxy from Railway Dashboard:");
+    console.error(
+      "      - Go to Railway Dashboard → Postgres service → Connect"
+    );
+    console.error("      - Copy TCP Proxy domain and port");
+    console.error("      - Set as environment variables before running");
+    console.error(
+      "   3. Or use DATABASE_PUBLIC_URL if available in Railway variables"
+    );
     process.exit(1);
   }
+
+  if (!pgPassword) {
+    console.error("❌ Cannot extract password from DATABASE_URL");
+    console.error("   Password is required to construct public URL");
+    process.exit(1);
+  }
+
+  // Construct public URL using TCP proxy
+  databaseUrl = `postgresql://${pgUser}:${pgPassword}@${tcpProxyDomain}:${tcpProxyPort}/${pgDatabase}`;
+  console.log(
+    `📡 Using TCP proxy connection: ${tcpProxyDomain}:${tcpProxyPort}`
+  );
 }
 
 if (!databaseUrl) {
@@ -43,7 +139,7 @@ const client = new Client({
 async function runMigration() {
   try {
     console.log(
-      "🚀 Starting migration: 20241206120000_add_refresh_token_security"
+      "🚀 Starting migration: 20250114000000_add_video_steps"
     );
     console.log("📡 Connecting to database...");
 
@@ -55,7 +151,7 @@ async function runMigration() {
       __dirname,
       "prisma",
       "migrations",
-      "20241206120000_add_refresh_token_security",
+      "20250114000000_add_video_steps",
       "migration.sql"
     );
 
@@ -67,94 +163,38 @@ async function runMigration() {
       // If file doesn't exist, use inline SQL
       console.log("⚠️  Migration file not found, using inline SQL");
       sql = `
--- CreateTable: admin_refresh_tokens
-CREATE TABLE IF NOT EXISTS "admin_refresh_tokens"
-(
+-- CreateTable: VideoStep
+CREATE TABLE IF NOT EXISTS "video_steps" (
     "id" TEXT NOT NULL,
-    "admin_id" TEXT NOT NULL,
-    "token_hash" TEXT NOT NULL,
-    "expires_at" TIMESTAMP(3) NOT NULL,
-    "is_revoked" BOOLEAN NOT NULL DEFAULT false,
-    "revoked_at" TIMESTAMP(3),
-    "device_info" TEXT,
-    "ip_address" TEXT,
-    "user_agent" TEXT,
+    "video_id" TEXT NOT NULL,
+    "step_number" INTEGER NOT NULL,
+    "title" TEXT NOT NULL,
+    "description" TEXT,
+    "cloudflare_video_id" TEXT,
+    "video_url" TEXT,
+    "thumbnail_url" TEXT,
+    "duration_seconds" INTEGER,
+    "sort_order" INTEGER NOT NULL DEFAULT 0,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "admin_refresh_tokens_pkey" PRIMARY KEY ("id")
+    "updated_at" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "video_steps_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex: admin_refresh_tokens_token_hash
-CREATE UNIQUE INDEX IF NOT EXISTS "admin_refresh_tokens_token_hash_key" ON "admin_refresh_tokens"("token_hash");
+-- CreateIndex: video_steps_video_id_idx
+CREATE INDEX IF NOT EXISTS "video_steps_video_id_idx" ON "video_steps"("video_id");
 
--- CreateIndex: admin_refresh_tokens_admin_id
-CREATE INDEX IF NOT EXISTS "admin_refresh_tokens_admin_id_idx" ON "admin_refresh_tokens"("admin_id");
+-- CreateIndex: video_steps_video_id_sort_order_idx
+CREATE INDEX IF NOT EXISTS "video_steps_video_id_sort_order_idx" ON "video_steps"("video_id", "sort_order");
 
--- CreateIndex: admin_refresh_tokens_token_hash_idx
-CREATE INDEX IF NOT EXISTS "admin_refresh_tokens_token_hash_idx" ON "admin_refresh_tokens"("token_hash");
+-- CreateUniqueConstraint: video_steps_video_id_step_number_key
+CREATE UNIQUE INDEX IF NOT EXISTS "video_steps_video_id_step_number_key" ON "video_steps"("video_id", "step_number");
 
--- CreateIndex: admin_refresh_tokens_expires_at_idx
-CREATE INDEX IF NOT EXISTS "admin_refresh_tokens_expires_at_idx" ON "admin_refresh_tokens"("expires_at");
-
--- CreateIndex: admin_refresh_tokens_is_revoked_idx
-CREATE INDEX IF NOT EXISTS "admin_refresh_tokens_is_revoked_idx" ON "admin_refresh_tokens"("is_revoked");
-
--- AddForeignKey: admin_refresh_tokens_admin_id_fkey
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint 
-        WHERE conname = 'admin_refresh_tokens_admin_id_fkey'
-    ) THEN
-        ALTER TABLE "admin_refresh_tokens" 
-        ADD CONSTRAINT "admin_refresh_tokens_admin_id_fkey" 
-        FOREIGN KEY ("admin_id") REFERENCES "admins"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-    END IF;
-END $$;
-
--- AlterTable: refresh_tokens - Rename token to token_hash
-DROP INDEX IF EXISTS "refresh_tokens_token_key";
-DROP INDEX IF EXISTS "refresh_tokens_token_idx";
-
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'refresh_tokens' AND column_name = 'token'
-    ) THEN
-        ALTER TABLE "refresh_tokens" RENAME COLUMN "token" TO "token_hash";
-    END IF;
-END $$;
-
-CREATE UNIQUE INDEX IF NOT EXISTS "refresh_tokens_token_hash_key" ON "refresh_tokens"("token_hash");
-CREATE INDEX IF NOT EXISTS "refresh_tokens_token_hash_idx" ON "refresh_tokens"("token_hash");
-
--- AddColumn: refresh_tokens - Add user_agent column
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'refresh_tokens' AND column_name = 'user_agent'
-    ) THEN
-        ALTER TABLE "refresh_tokens" ADD COLUMN "user_agent" TEXT;
-    END IF;
-END $$;
-
--- CreateIndex: refresh_tokens_is_revoked (if it doesn't exist)
-CREATE INDEX IF NOT EXISTS "refresh_tokens_is_revoked_idx" ON "refresh_tokens"("is_revoked");
-
--- Record migration in _prisma_migrations table
-INSERT INTO "_prisma_migrations" (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at)
-VALUES (
-    gen_random_uuid()::text,
-    '',
-    NOW(),
-    '20241206120000_add_refresh_token_security',
-    NULL,
-    NULL,
-    NOW()
-)
-ON CONFLICT (migration_name) DO NOTHING;
+-- AddForeignKey: video_steps_video_id_fkey
+ALTER TABLE "video_steps" ADD CONSTRAINT "video_steps_video_id_fkey" 
+    FOREIGN KEY ("video_id") 
+    REFERENCES "videos"("id") 
+    ON DELETE CASCADE 
+    ON UPDATE CASCADE;
       `.trim();
     }
 
@@ -252,25 +292,33 @@ ON CONFLICT (migration_name) DO NOTHING;
     console.log("✅ Migration completed successfully!");
     console.log("📋 Verifying migration...");
 
-    // Verify the migration
-    const adminRefreshTokensResult = await client.query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'admin_refresh_tokens'
-      );
+    // Verify the migration - check that video_steps table exists
+    const tableResult = await client.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_name = 'video_steps';
     `);
 
-    if (adminRefreshTokensResult.rows[0].exists) {
-      console.log("✅ admin_refresh_tokens table exists");
+    if (tableResult.rows.length > 0) {
+      console.log("✅ Table video_steps successfully created");
+      
+      // Check columns
+      const columnsResult = await client.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'video_steps'
+        ORDER BY ordinal_position;
+      `);
+      console.log(`✅ Table has ${columnsResult.rows.length} columns`);
     } else {
-      console.log("❌ admin_refresh_tokens table not found");
+      console.log("⚠️  Table video_steps was not created");
     }
 
     // Check if migration is recorded
     const migrationRecord = await client.query(`
       SELECT * FROM "_prisma_migrations" 
-      WHERE migration_name = '20241206120000_add_refresh_token_security';
+      WHERE migration_name = '20250114000000_add_video_steps';
     `);
 
     if (migrationRecord.rows.length > 0) {
@@ -283,7 +331,7 @@ ON CONFLICT (migration_name) DO NOTHING;
         // Check if migration already exists before inserting
         const checkResult = await client.query(`
           SELECT id FROM "_prisma_migrations" 
-          WHERE migration_name = '20241206120000_add_refresh_token_security';
+          WHERE migration_name = '20250114000000_add_video_steps';
         `);
 
         if (checkResult.rows.length === 0) {
@@ -293,7 +341,7 @@ ON CONFLICT (migration_name) DO NOTHING;
               gen_random_uuid()::text,
               '',
               NOW(),
-              '20241206120000_add_refresh_token_security',
+              '20250114000000_add_video_steps',
               NULL,
               NULL,
               NOW()

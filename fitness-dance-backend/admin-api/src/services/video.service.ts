@@ -12,10 +12,7 @@ export const createVideoSchema = z.object({
   categoryId: z.string().uuid(),
   subcategoryId: z.string().uuid().optional(),
   collectionId: z.string().uuid().optional(),
-  danceStyleId: z.string().uuid(),
-  intensityLevelId: z.string().uuid(),
-  videoType: z.enum(["premium", "youtube_short"]).default("premium"),
-  youtubeVideoId: z.string().optional(),
+  videoType: z.enum(["premium", "free"]).default("premium"), // 'premium' = requires subscription, 'free' = no subscription needed
   hasAudioMode: z.boolean().default(true),
   durationSeconds: z.number().int().positive().optional(),
   isPublished: z.boolean().default(false),
@@ -38,8 +35,6 @@ export class VideoService {
     categoryId?: string;
     subcategoryId?: string;
     collectionId?: string;
-    danceStyleId?: string;
-    intensityLevelId?: string;
     isPublished?: boolean;
     videoType?: string;
     search?: string;
@@ -61,12 +56,6 @@ export class VideoService {
     if (params.collectionId) {
       where.collectionId = params.collectionId;
     }
-    if (params.danceStyleId) {
-      where.danceStyleId = params.danceStyleId;
-    }
-    if (params.intensityLevelId) {
-      where.intensityLevelId = params.intensityLevelId;
-    }
     if (params.isPublished !== undefined) {
       where.isPublished = params.isPublished;
     }
@@ -77,6 +66,9 @@ export class VideoService {
       where.OR = [
         { title: { contains: params.search, mode: "insensitive" } },
         { description: { contains: params.search, mode: "insensitive" } },
+        { category: { name: { contains: params.search, mode: "insensitive" } } },
+        { subcategory: { name: { contains: params.search, mode: "insensitive" } } },
+        { collection: { name: { contains: params.search, mode: "insensitive" } } },
       ];
     }
 
@@ -99,20 +91,6 @@ export class VideoService {
             },
           },
           collection: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-            },
-          },
-          danceStyle: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-            },
-          },
-          intensityLevel: {
             select: {
               id: true,
               name: true,
@@ -142,6 +120,23 @@ export class VideoService {
   }
 
   /**
+   * Get videos by IDs (for batch operations)
+   */
+  async getVideosByIds(ids: string[]) {
+    const videos = await prisma.video.findMany({
+      where: {
+        id: { in: ids },
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        thumbnailUrl: true,
+      },
+    });
+    return videos;
+  }
+
+  /**
    * Get video by ID
    */
   async getVideoById(id: string) {
@@ -154,8 +149,6 @@ export class VideoService {
         category: true,
         subcategory: true,
         collection: true,
-        danceStyle: true,
-        intensityLevel: true,
       },
     });
 
@@ -180,10 +173,7 @@ export class VideoService {
         categoryId: data.categoryId,
         subcategoryId: data.subcategoryId,
         collectionId: data.collectionId,
-        danceStyleId: data.danceStyleId,
-        intensityLevelId: data.intensityLevelId,
         videoType: data.videoType,
-        youtubeVideoId: data.youtubeVideoId,
         hasAudioMode: data.hasAudioMode,
         durationSeconds: data.durationSeconds,
         isPublished: data.isPublished,
@@ -194,8 +184,6 @@ export class VideoService {
         category: true,
         subcategory: true,
         collection: true,
-        danceStyle: true,
-        intensityLevel: true,
       },
     });
 
@@ -220,7 +208,7 @@ export class VideoService {
 
     // Validate relationships if provided
     if (data.categoryId || data.subcategoryId || data.collectionId || 
-        data.danceStyleId || data.intensityLevelId) {
+        data.collectionId) {
       await this.validateRelationships(data as any);
     }
 
@@ -230,10 +218,7 @@ export class VideoService {
     if (data.categoryId !== undefined) updateData.categoryId = data.categoryId;
     if (data.subcategoryId !== undefined) updateData.subcategoryId = data.subcategoryId;
     if (data.collectionId !== undefined) updateData.collectionId = data.collectionId;
-    if (data.danceStyleId !== undefined) updateData.danceStyleId = data.danceStyleId;
-    if (data.intensityLevelId !== undefined) updateData.intensityLevelId = data.intensityLevelId;
     if (data.videoType !== undefined) updateData.videoType = data.videoType;
-    if (data.youtubeVideoId !== undefined) updateData.youtubeVideoId = data.youtubeVideoId;
     if (data.hasAudioMode !== undefined) updateData.hasAudioMode = data.hasAudioMode;
     if (data.durationSeconds !== undefined) updateData.durationSeconds = data.durationSeconds;
     if (data.isPublished !== undefined) {
@@ -250,7 +235,6 @@ export class VideoService {
     // Handle undefined values for optional fields (set to null)
     if (data.subcategoryId === null) updateData.subcategoryId = null;
     if (data.collectionId === null) updateData.collectionId = null;
-    if (data.youtubeVideoId === null) updateData.youtubeVideoId = null;
     if (data.cloudflareVideoId === null) updateData.cloudflareVideoId = null;
     if (data.thumbnailUrl === null) updateData.thumbnailUrl = null;
     if (data.audioUrl === null) updateData.audioUrl = null;
@@ -262,8 +246,6 @@ export class VideoService {
         category: true,
         subcategory: true,
         collection: true,
-        danceStyle: true,
-        intensityLevel: true,
       },
     });
 
@@ -345,8 +327,6 @@ export class VideoService {
         category: true,
         subcategory: true,
         collection: true,
-        danceStyle: true,
-        intensityLevel: true,
       },
     });
 
@@ -360,8 +340,6 @@ export class VideoService {
     categoryId?: string;
     subcategoryId?: string;
     collectionId?: string;
-    danceStyleId?: string;
-    intensityLevelId?: string;
   }) {
     if (data.categoryId) {
       const category = await prisma.videoCategory.findFirst({
@@ -387,24 +365,6 @@ export class VideoService {
       });
       if (!collection) {
         throw new Error("Collection not found");
-      }
-    }
-
-    if (data.danceStyleId) {
-      const danceStyle = await prisma.danceStyle.findFirst({
-        where: { id: data.danceStyleId },
-      });
-      if (!danceStyle) {
-        throw new Error("Dance style not found");
-      }
-    }
-
-    if (data.intensityLevelId) {
-      const intensityLevel = await prisma.intensityLevel.findFirst({
-        where: { id: data.intensityLevelId },
-      });
-      if (!intensityLevel) {
-        throw new Error("Intensity level not found");
       }
     }
   }

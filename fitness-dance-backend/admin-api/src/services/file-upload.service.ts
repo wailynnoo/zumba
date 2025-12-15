@@ -182,6 +182,116 @@ export class FileUploadService {
   }
 
   /**
+   * Upload collection thumbnail and update collection record
+   * Uploads to R2 (private bucket) and stores R2 key in database
+   */
+  async uploadCollectionThumbnail(file: Express.Multer.File, collectionId: string) {
+    // Verify collection exists
+    const collection = await prisma.videoCollection.findFirst({
+      where: {
+        id: collectionId,
+        deletedAt: null,
+      },
+    });
+
+    if (!collection) {
+      // Delete uploaded file if collection doesn't exist
+      if (file.path) {
+        this.deleteFile(file.path);
+      }
+      throw new Error("Collection not found");
+    }
+
+    // Delete old thumbnail from R2 if it exists
+    if (collection.thumbnailUrl) {
+      try {
+        await r2StorageService.deleteFile(collection.thumbnailUrl);
+      } catch (error) {
+        console.error("Error deleting old collection thumbnail from R2:", error);
+        // Continue even if deletion fails
+      }
+    }
+
+    if (!file.path) {
+      throw new Error("File path not available");
+    }
+
+    // Upload to R2 (returns R2 key, not public URL)
+    const fileName = path.basename(file.path);
+    const r2Key = await r2StorageService.uploadCollectionThumbnail(
+      file.path,
+      fileName,
+      file.mimetype
+    );
+
+    // Delete local file after uploading to R2
+    try {
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+    } catch (error) {
+      console.error("Error deleting local file after R2 upload:", error);
+    }
+
+    // Update collection with R2 key (not a public URL since bucket is private)
+    const updatedCollection = await prisma.videoCollection.update({
+      where: { id: collectionId },
+      data: { thumbnailUrl: r2Key },
+    });
+
+    return {
+      collection: {
+        ...updatedCollection,
+        thumbnailUrl: r2Key, // Return R2 key
+      },
+      thumbnailUrl: r2Key, // Return R2 key (frontend will get signed URL when needed)
+    };
+  }
+
+  /**
+   * Delete collection thumbnail
+   * Deletes from R2 if it's an R2 key, otherwise tries local filesystem (legacy)
+   */
+  async deleteCollectionThumbnail(collectionId: string) {
+    // Get collection
+    const collection = await prisma.videoCollection.findFirst({
+      where: {
+        id: collectionId,
+        deletedAt: null,
+      },
+    });
+
+    if (!collection) {
+      throw new Error("Collection not found");
+    }
+
+    if (!collection.thumbnailUrl) {
+      throw new Error("Collection has no thumbnail to delete");
+    }
+
+    // Delete from R2 if it's an R2 key (starts with "collections/")
+    if (collection.thumbnailUrl.startsWith("collections/")) {
+      try {
+        await r2StorageService.deleteFile(collection.thumbnailUrl);
+      } catch (error) {
+        console.error("Error deleting collection thumbnail from R2:", error);
+        // Continue even if deletion fails
+      }
+    } else {
+      // Legacy: Try to delete from local filesystem
+      await this.deleteCollectionThumbnailFile(collection.thumbnailUrl);
+    }
+
+    // Update collection (set thumbnailUrl to null)
+    const updatedCollection = await prisma.videoCollection.update({
+      where: { id: collectionId },
+      data: { thumbnailUrl: null },
+    });
+
+    return updatedCollection;
+  }
+
+  /**
    * Convert relative path to full URL (for API responses)
    */
   getFullImageUrl(relativePath: string | null): string | null {
@@ -195,6 +305,28 @@ export class FileUploadService {
     // Convert relative path to full URL
     const fileName = path.basename(relativePath);
     return `${this.getBaseUrl()}/categories/${fileName}`;
+  }
+
+  /**
+   * Delete collection thumbnail file from filesystem
+   */
+  private async deleteCollectionThumbnailFile(thumbnailUrlOrPath: string): Promise<void> {
+    try {
+      // Extract relative path (handles both URLs and relative paths)
+      const relativePath = this.extractRelativePath(thumbnailUrlOrPath);
+      
+      // Extract filename from relative path: uploads/collections/file.jpg -> file.jpg
+      const fileName = path.basename(relativePath);
+      const filePath = path.join(process.cwd(), "uploads", "collections", fileName);
+
+      // Check if file exists and delete
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (error) {
+      // Log error but don't throw (file might already be deleted)
+      console.error("Error deleting collection thumbnail file:", error);
+    }
   }
 
   /**

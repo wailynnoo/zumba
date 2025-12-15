@@ -214,7 +214,6 @@ model DanceStyle {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   // Relations
-  videos            Video[]
   knowledgeArticles KnowledgeArticle[]
 
   @@index([slug])
@@ -231,9 +230,6 @@ model IntensityLevel {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  // Relations
-  videos Video[]
-
   @@index([slug])
   @@map("intensity_levels")
 }
@@ -249,11 +245,8 @@ model Video {
   categoryId        String    @map("category_id")
   subcategoryId     String?   @map("subcategory_id")
   collectionId      String?   @map("collection_id")
-  danceStyleId      String    @map("dance_style_id")
-  intensityLevelId  String    @map("intensity_level_id")
   cloudflareVideoId String?   @unique @map("cloudflare_video_id")
-  youtubeVideoId    String?   @map("youtube_video_id")
-  videoType         String    @default("premium") @map("video_type") // 'premium' | 'youtube_short'
+  videoType         String    @default("premium") @map("video_type") // 'premium' = requires subscription, 'free' = no subscription needed
   audioUrl          String?   @map("audio_url") // Optional audio-only track URL
   hasAudioMode      Boolean   @default(true) @map("has_audio_mode") // Whether audio-only mode is available
   thumbnailUrl      String?   @map("thumbnail_url")
@@ -270,25 +263,45 @@ model Video {
   category       VideoCategory     @relation(fields: [categoryId], references: [id])
   subcategory    VideoSubcategory? @relation(fields: [subcategoryId], references: [id])
   collection     VideoCollection?  @relation(fields: [collectionId], references: [id])
-  danceStyle     DanceStyle        @relation(fields: [danceStyleId], references: [id])
-  intensityLevel IntensityLevel    @relation(fields: [intensityLevelId], references: [id])
   playlistItems  PlaylistItem[]
   ratings        Rating[]
   feedback       Feedback[]
   watchHistory   WatchHistory[]
   favorites      Favorite[]
+  videoSteps     VideoStep[]
 
   @@index([categoryId])
   @@index([subcategoryId])
   @@index([collectionId])
-  @@index([danceStyleId])
-  @@index([intensityLevelId])
   @@index([isPublished])
   @@index([videoType])
   @@index([cloudflareVideoId])
   @@index([categoryId, subcategoryId])
   @@index([categoryId, collectionId])
   @@map("videos")
+}
+
+model VideoStep {
+  id                String    @id @default(uuid())
+  videoId           String    @map("video_id")
+  stepNumber        Int       @map("step_number")
+  title             String
+  description       String?
+  cloudflareVideoId String?   @map("cloudflare_video_id")
+  videoUrl          String?   @map("video_url")
+  thumbnailUrl      String?   @map("thumbnail_url")
+  durationSeconds   Int?      @map("duration_seconds")
+  sortOrder         Int       @default(0) @map("sort_order")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([videoId, stepNumber])
+  @@index([videoId])
+  @@index([videoId, sortOrder])
+  @@map("video_steps")
 }
 
 // ============================================

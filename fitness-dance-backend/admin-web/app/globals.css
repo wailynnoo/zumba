@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+  
+  /* Z-Fit Dance Plus Brand Colors - Softer, Eye-Friendly */
+  --zfit-lime: #6BBD45;
+  --zfit-yellow: #9ACD32;
+  --zfit-lime-dark: #5A9E3A;
+  --zfit-yellow-dark: #7FB347;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 255, 255, 255;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 0, 0, 0;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-dm-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .bg-gradient-radial {
+    background-image: radial-gradient(circle, var(--tw-gradient-stops));
+  }
+  
+  /* Brand color utilities - Softer colors */
+  .bg-zfit-lime {
+    background-color: #6BBD45;
+  }
+  
+  .bg-zfit-yellow {
+    background-color: #9ACD32;
+  }
+  
+  .text-zfit-lime {
+    color: #6BBD45;
+  }
+  
+  .text-zfit-yellow {
+    color: #9ACD32;
+  }
+  
+  .border-zfit-lime {
+    border-color: #6BBD45;
+  }
+  
+  .ring-zfit-lime {
+    --tw-ring-color: #6BBD45;
+  }
+  
+  .bg-gradient-zfit {
+    background: linear-gradient(135deg, #6BBD45 0%, #9ACD32 100%);
+  }
+  
+  .bg-gradient-zfit-subtle {
+    background: linear-gradient(135deg, rgba(107, 189, 69, 0.08) 0%, rgba(154, 205, 50, 0.08) 100%);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}

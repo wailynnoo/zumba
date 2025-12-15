@@ -100,12 +100,16 @@ app.get("/health", (_req: Request, res: Response) => {
 // API Routes
 import authRoutes from "./routes/auth.routes";
 import categoryRoutes from "./routes/category.routes";
+import collectionRoutes from "./routes/collection.routes";
 import videoRoutes from "./routes/video.routes";
+import videoStepRoutes from "./routes/video-step.routes";
 import danceStyleRoutes from "./routes/dance-style.routes";
 import intensityLevelRoutes from "./routes/intensity-level.routes";
 app.use("/api/auth", authRoutes);
 app.use("/api/categories", categoryRoutes);
+app.use("/api/collections", collectionRoutes);
 app.use("/api/videos", videoRoutes);
+app.use("/api", videoStepRoutes);
 app.use("/api/dance-styles", danceStyleRoutes);
 app.use("/api/intensity-levels", intensityLevelRoutes);
 
@@ -118,6 +122,7 @@ app.get("/", (_req: Request, res: Response) => {
       health: "/health",
       auth: "/api/auth",
       categories: "/api/categories",
+      collections: "/api/collections",
       videos: "/api/videos",
       danceStyles: "/api/dance-styles",
       intensityLevels: "/api/intensity-levels",

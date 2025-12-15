@@ -213,6 +213,7 @@ async function main() {
         admins: ["create", "read", "update", "delete"],
         videos: ["create", "read", "update", "delete"],
         categories: ["create", "read", "update", "delete"],
+        collections: ["create", "read", "update", "delete"],
         subscriptions: ["create", "read", "update", "delete"],
         analytics: ["read"],
         settings: ["read", "update"],
@@ -227,6 +228,7 @@ async function main() {
       permissions: {
         videos: ["create", "read", "update", "delete"],
         categories: ["create", "read", "update", "delete"],
+        collections: ["create", "read", "update", "delete"],
         knowledge: ["create", "read", "update", "delete"],
         analytics: ["read"],
       },
@@ -240,6 +242,7 @@ async function main() {
         subscriptions: ["read", "update"],
         analytics: ["read"],
         categories: ["read"], // Read-only access to categories
+        collections: ["read"], // Read-only access to collections
       },
     },
     {
@@ -250,6 +253,7 @@ async function main() {
         feedback: ["read", "update"],
         users: ["read"],
         categories: ["read"], // Read-only access to categories
+        collections: ["read"], // Read-only access to collections
       },
     },
   ];

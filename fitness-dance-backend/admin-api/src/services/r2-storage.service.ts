@@ -1,7 +1,7 @@
 // admin-api/src/services/r2-storage.service.ts
 // Cloudflare R2 Storage Service (S3-compatible)
 
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { env } from "../config/env";
 import path from "path";
@@ -258,11 +258,75 @@ export class R2StorageService {
   }
 
   /**
+   * Upload collection thumbnail to R2
+   * @param file - File buffer, Uint8Array, or file path string
+   * @param fileName - File name (will be prefixed with collections/)
+   * @param contentType - MIME type (e.g., image/jpeg)
+   * @returns R2 key (e.g., "collections/collection-xxx.jpg") - not a public URL since bucket is private
+   */
+  async uploadCollectionThumbnail(
+    file: Buffer | Uint8Array | string,
+    fileName: string,
+    contentType: string = "image/jpeg"
+  ): Promise<string> {
+    console.log("[R2 Storage] uploadCollectionThumbnail called with:", {
+      fileName,
+      contentType,
+      fileType: typeof file === "string" ? "path" : "buffer",
+      bucketName: this.bucketName,
+    });
+
+    if (!this.s3Client) {
+      console.error("[R2 Storage] S3 client is null - R2 not configured");
+      throw new Error("R2 storage is not configured. Please set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY");
+    }
+
+    const cleanFileName = fileName.startsWith("/") ? fileName.substring(1) : fileName;
+    const key = `collections/${cleanFileName}`;
+
+    console.log("[R2 Storage] Uploading collection thumbnail to key:", key);
+
+    try {
+      // If file is a path string, read it as buffer
+      let fileBuffer: Buffer | Uint8Array;
+      if (typeof file === "string") {
+        const fs = require("fs");
+        fileBuffer = fs.readFileSync(file);
+      } else {
+        fileBuffer = file;
+      }
+
+      const command = new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+        Body: fileBuffer,
+        ContentType: contentType,
+      });
+
+      await this.s3Client.send(command);
+
+      console.log("[R2 Storage] Collection thumbnail uploaded successfully to:", key);
+      
+      // Return the R2 key (not a public URL since bucket is private)
+      return key;
+    } catch (error: any) {
+      console.error("[R2 Storage] Error uploading collection thumbnail to R2:", error);
+      console.error("[R2 Storage] Error details:", {
+        message: error.message,
+        code: error.Code,
+        requestId: error.$metadata?.requestId,
+        statusCode: error.$metadata?.httpStatusCode,
+      });
+      throw new Error(`Failed to upload collection thumbnail to R2: ${error.message}`);
+    }
+  }
+
+  /**
    * Upload audio file to R2
    * @param file - Audio buffer
    * @param fileName - File name (will be prefixed with audio/)
    * @param contentType - MIME type (e.g., audio/mpeg)
-   * @returns Public URL of uploaded file
+   * @returns R2 key (e.g., "audio/audio-xxx.mp3") - not a public URL since bucket is private
    */
   async uploadAudio(
     file: Buffer | Uint8Array,
@@ -286,15 +350,10 @@ export class R2StorageService {
 
       await this.s3Client.send(command);
 
-      // Return public URL
-      if (this.publicUrl) {
-        return `${this.publicUrl.replace(/\/$/, "")}/${key}`;
-      } else {
-        throw new Error(
-          "R2_PUBLIC_URL is not configured. Please set R2_PUBLIC_URL environment variable " +
-          "to your R2 public URL (e.g., https://pub-xxx.r2.dev)."
-        );
-      }
+      console.log("[R2 Storage] Audio uploaded successfully to:", key);
+      
+      // Return the R2 key (not a public URL since bucket is private)
+      return key;
     } catch (error: any) {
       console.error("Error uploading audio to R2:", error);
       throw new Error(`Failed to upload audio to R2: ${error.message}`);
@@ -359,16 +418,22 @@ export class R2StorageService {
       if (fileUrl.includes("/")) {
         const urlParts = fileUrl.split("/");
         const keyIndex = urlParts.findIndex(part => 
-          part === "videos" || part === "thumbnails" || part === "audio" || part === "categories"
+          part === "videos" || part === "thumbnails" || part === "audio" || part === "categories" || part === "video-steps"
         );
         if (keyIndex >= 0) {
           key = urlParts.slice(keyIndex).join("/");
         } else {
-          const match = fileUrl.match(/(videos|thumbnails|audio|categories)\/.+$/);
+          const match = fileUrl.match(/(videos|thumbnails|audio|categories|video-steps)\/.+$/);
           if (match) {
             key = match[0];
           }
         }
+      }
+
+      // Fix: If key starts with "video-steps/" (without "videos/" prefix), add it
+      // This handles old records that were stored with the wrong key format
+      if (key.startsWith("video-steps/") && !key.startsWith("videos/video-steps/")) {
+        key = `videos/${key}`;
       }
 
       const command = new GetObjectCommand({
@@ -380,6 +445,57 @@ export class R2StorageService {
     } catch (error: any) {
       console.error("Error generating signed URL:", error);
       throw new Error(`Failed to generate signed URL: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check if a file exists in R2
+   * @param fileUrl - Full URL or key of file
+   * @returns true if file exists, false otherwise
+   */
+  async fileExists(fileUrl: string): Promise<boolean> {
+    if (!this.s3Client) {
+      throw new Error("R2 storage is not configured");
+    }
+
+    try {
+      // Extract key from URL
+      let key = fileUrl;
+      if (fileUrl.includes("/")) {
+        const urlParts = fileUrl.split("/");
+        const keyIndex = urlParts.findIndex(part => 
+          part === "videos" || part === "thumbnails" || part === "audio" || part === "categories" || part === "video-steps"
+        );
+        if (keyIndex >= 0) {
+          key = urlParts.slice(keyIndex).join("/");
+        } else {
+          const match = fileUrl.match(/(videos|thumbnails|audio|categories|video-steps)\/.+$/);
+          if (match) {
+            key = match[0];
+          }
+        }
+      }
+
+      // Fix: If key starts with "video-steps/" (without "videos/" prefix), add it
+      if (key.startsWith("video-steps/") && !key.startsWith("videos/video-steps/")) {
+        key = `videos/${key}`;
+      }
+
+      const command = new HeadObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+      });
+
+      await this.s3Client.send(command);
+      return true;
+    } catch (error: any) {
+      // If error is 404 (NotFound), file doesn't exist
+      if (error.name === "NotFound" || error.$metadata?.httpStatusCode === 404) {
+        return false;
+      }
+      // For other errors, log and return false
+      console.error("Error checking file existence:", error);
+      return false;
     }
   }
 

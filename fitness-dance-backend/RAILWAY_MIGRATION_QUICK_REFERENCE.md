@@ -19,13 +19,17 @@ Select:
 - Workspace: Your workspace
 - Project: `fitness-dance-backend`
 - Environment: `production`
-- Service: `admin-api` (or skip with Esc)
+- Service: `Postgres` (or skip with Esc)
 
 ### **2. Run Migration Script**
 
+**IMPORTANT: Run via Postgres service (not admin-api) to get TCP proxy variables automatically:**
+
 ```powershell
-railway run --service admin-api node run-migration.js
+railway run --service Postgres node run-migration.js
 ```
+
+> **Why Postgres service?** Railway CLI automatically provides `RAILWAY_TCP_PROXY_DOMAIN` and `RAILWAY_TCP_PROXY_PORT` when running via the Postgres service, which are required to connect to the database from your local machine.
 
 **That's it!** The script will:
 
@@ -81,7 +85,7 @@ const migrationName =
 Then run:
 
 ```powershell
-railway run --service admin-api node run-migration.js YOUR_NEW_MIGRATION_NAME
+railway run --service Postgres node run-migration.js YOUR_NEW_MIGRATION_NAME
 ```
 
 ---
@@ -91,7 +95,8 @@ railway run --service admin-api node run-migration.js YOUR_NEW_MIGRATION_NAME
 - **No Git Required:** Works even if Railway doesn't deploy `prisma/migrations` folder
 - **Safe to Re-run:** Script handles "already exists" errors gracefully
 - **TCP Proxy:** Automatically uses Railway's public TCP proxy when internal URL is detected
-- **Environment Variables:** Railway CLI automatically provides `DATABASE_URL`, `RAILWAY_TCP_PROXY_DOMAIN`, etc.
+- **Service:** Must run via `Postgres` service (not `admin-api`) to get `RAILWAY_TCP_PROXY_DOMAIN` and `RAILWAY_TCP_PROXY_PORT` automatically
+- **Environment Variables:** Railway CLI automatically provides `DATABASE_URL`, `RAILWAY_TCP_PROXY_DOMAIN`, etc. when running via Postgres service
 
 ---
 
@@ -110,11 +115,11 @@ railway run --service admin-api node run-migration.js YOUR_NEW_MIGRATION_NAME
 # Link to project (first time only)
 railway link
 
-# Run migration
-railway run --service admin-api node run-migration.js
+# Run migration (IMPORTANT: Use Postgres service for TCP proxy variables)
+railway run --service Postgres node run-migration.js
 
 # Check migration status (after running)
-railway run --service admin-api npx prisma migrate status
+railway run --service Postgres npx prisma migrate status
 
 # View Railway variables (for debugging)
 railway variables --service Postgres
@@ -128,19 +133,28 @@ railway variables --service admin-api
 You should see:
 
 ```
-📡 Using TCP proxy connection (public URL)
-🚀 Starting migration: 20241206120000_add_refresh_token_security
+📡 Using TCP proxy connection: nozomi.proxy.rlwy.net:56096
+🚀 Starting migration: 20250113000000_remove_dance_style_intensity_youtube
 📡 Connecting to database...
 ✅ Connected to database
 ✅ Found migration SQL file
-📝 Executing 14 SQL statements...
-✅ Statement 1/14 executed
-...
+📝 Executing 3 SQL statements...
+✅ Statement 1/3 executed
+✅ Statement 2/3 executed
+✅ Statement 3/3 executed
 ✅ Migration completed successfully!
-✅ admin_refresh_tokens table exists
+✅ Columns dance_style_id, intensity_level_id, youtube_video_id successfully removed
 ✅ Migration recorded in _prisma_migrations
 ```
 
 ---
+
+**✅ This solution works reliably for Railway database migrations!**
+
+**✅ This solution works reliably for Railway database migrations!**
+
+---
+
+**✅ This solution works reliably for Railway database migrations!**
 
 **✅ This solution works reliably for Railway database migrations!**

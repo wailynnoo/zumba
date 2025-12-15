@@ -135,13 +135,14 @@ export function requirePermission(resource: string, action: string) {
       return;
     }
 
-    // Log permission check for file upload routes
-    if (req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
+    // Log permission check for collections and file upload routes
+    if (req.path.includes("/collections") || req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
       console.log("[Permission] Checking permission:", {
         resource,
         action,
         roleSlug: req.admin.roleSlug,
         hasPermissions: !!permissions,
+        path: req.path,
       });
     }
 
@@ -157,10 +158,13 @@ export function requirePermission(resource: string, action: string) {
     // Check if resource exists in permissions
     const resourcePermissions = (permissions as any)[resource];
     if (!resourcePermissions || !Array.isArray(resourcePermissions)) {
-      if (req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
+      if (req.path.includes("/collections") || req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
         console.log("[Permission] No access to resource:", {
           resource,
+          action,
           hasResourcePerms: !!resourcePermissions,
+          availableResources: Object.keys(permissions || {}),
+          path: req.path,
         });
       }
       res.status(403).json({
@@ -172,11 +176,12 @@ export function requirePermission(resource: string, action: string) {
 
     // Check if action is allowed
     if (!resourcePermissions.includes(action)) {
-      if (req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
+      if (req.path.includes("/collections") || req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
         console.log("[Permission] No permission for action:", {
           resource,
           action,
           allowedActions: resourcePermissions,
+          path: req.path,
         });
       }
       res.status(403).json({
@@ -186,7 +191,7 @@ export function requirePermission(resource: string, action: string) {
       return;
     }
 
-    if (req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
+    if (req.path.includes("/collections") || req.path.includes("/video") || req.path.includes("/thumbnail") || req.path.includes("/audio")) {
       console.log("[Permission] Permission granted - proceeding to handler");
     }
 
