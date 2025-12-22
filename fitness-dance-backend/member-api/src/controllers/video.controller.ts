@@ -1,7 +1,7 @@
 // member-api/src/controllers/video.controller.ts
 // Video controller for Member API - Streaming and read operations
 
-import { Request, Response } from "express";
+import { Response } from "express";
 import { videoService } from "../services/video.service";
 import { subscriptionService } from "../services/subscription.service";
 import { r2StorageService } from "../services/r2-storage.service";
@@ -187,8 +187,6 @@ export class VideoController {
       const categoryId = req.query.categoryId as string | undefined;
       const subcategoryId = req.query.subcategoryId as string | undefined;
       const collectionId = req.query.collectionId as string | undefined;
-      const danceStyleId = req.query.danceStyleId as string | undefined;
-      const intensityLevelId = req.query.intensityLevelId as string | undefined;
       const videoType = req.query.videoType as string | undefined;
       const search = req.query.search as string | undefined;
 
@@ -198,8 +196,6 @@ export class VideoController {
         categoryId,
         subcategoryId,
         collectionId,
-        danceStyleId,
-        intensityLevelId,
         videoType,
         search,
       });

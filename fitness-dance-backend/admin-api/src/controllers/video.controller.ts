@@ -6,6 +6,10 @@ import { videoService, createVideoSchema, updateVideoSchema } from "../services/
 import { r2StorageService } from "../services/r2-storage.service";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { z } from "zod";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
+import getVideoDuration from "get-video-duration";
 
 export class VideoController {
   /**
@@ -228,6 +232,33 @@ export class VideoController {
       const fileName = r2StorageService.generateFileName(req.file.originalname, "video");
       console.log("[Video Upload] Generated file name:", fileName);
 
+      // Detect video duration before uploading
+      let durationSeconds: number | undefined;
+      const tempFilePath = path.join(os.tmpdir(), `video-${Date.now()}-${Math.random().toString(36).substring(7)}.${path.extname(req.file.originalname).slice(1)}`);
+      
+      try {
+        console.log("[Video Upload] Writing video to temp file for duration detection:", tempFilePath);
+        fs.writeFileSync(tempFilePath, req.file.buffer);
+        
+        console.log("[Video Upload] Detecting video duration...");
+        const duration = await getVideoDuration(tempFilePath);
+        durationSeconds = Math.round(duration);
+        console.log("[Video Upload] Video duration detected:", durationSeconds, "seconds");
+      } catch (durationError: any) {
+        console.warn("[Video Upload] Failed to detect video duration:", durationError.message);
+        // Continue without duration - it's optional
+      } finally {
+        // Clean up temp file
+        try {
+          if (fs.existsSync(tempFilePath)) {
+            fs.unlinkSync(tempFilePath);
+            console.log("[Video Upload] Temp file cleaned up");
+          }
+        } catch (cleanupError) {
+          console.error("[Video Upload] Error cleaning up temp file:", cleanupError);
+        }
+      }
+
       // Upload to R2
       console.log("[Video Upload] Uploading to R2...");
       const videoUrl = await r2StorageService.uploadVideo(
@@ -237,11 +268,15 @@ export class VideoController {
       );
       console.log("[Video Upload] Upload successful! Video URL:", videoUrl);
 
-      // Update video record
+      // Update video record with video URL and duration
       console.log("[Video Upload] Updating video record in database...");
-      const updatedVideo = await videoService.updateVideo(id, {
+      const updateData: any = {
         cloudflareVideoId: videoUrl,
-      });
+      };
+      if (durationSeconds !== undefined) {
+        updateData.durationSeconds = durationSeconds;
+      }
+      const updatedVideo = await videoService.updateVideo(id, updateData);
       console.log("[Video Upload] Video record updated successfully");
 
       res.status(200).json({

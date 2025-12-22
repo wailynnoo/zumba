@@ -2,6 +2,20 @@
 
 import { Video } from "@/lib/services/videoService";
 
+// Helper function to format duration in seconds to MM:SS or HH:MM:SS
+function formatDuration(seconds: number | null | undefined): string {
+  if (!seconds || seconds <= 0) return "N/A";
+  
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  }
+  return `${minutes}:${secs.toString().padStart(2, "0")}`;
+}
+
 interface VideoListProps {
   videos: Video[];
   loading: boolean;
@@ -98,6 +112,9 @@ export default function VideoList({
                 Status
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                Duration
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                 Actions
               </th>
             </tr>
@@ -105,7 +122,7 @@ export default function VideoList({
           <tbody className="divide-y divide-gray-200 bg-white">
             {videos.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                   <div className="flex flex-col items-center">
                     <svg
                       className="h-12 w-12 text-gray-400 mb-2"
@@ -172,6 +189,9 @@ export default function VideoList({
                     >
                       {video.isPublished ? "Published" : "Draft"}
                     </button>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                    {formatDuration(video.durationSeconds)}
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-sm">
                     <div className="flex items-center gap-2">

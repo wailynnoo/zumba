@@ -105,6 +105,7 @@ import videoRoutes from "./routes/video.routes";
 import videoStepRoutes from "./routes/video-step.routes";
 import danceStyleRoutes from "./routes/dance-style.routes";
 import intensityLevelRoutes from "./routes/intensity-level.routes";
+import adminRoutes from "./routes/admin.routes";
 app.use("/api/auth", authRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/collections", collectionRoutes);
@@ -112,6 +113,7 @@ app.use("/api/videos", videoRoutes);
 app.use("/api", videoStepRoutes);
 app.use("/api/dance-styles", danceStyleRoutes);
 app.use("/api/intensity-levels", intensityLevelRoutes);
+app.use("/api/admins", adminRoutes);
 
 // Root route
 app.get("/", (_req: Request, res: Response) => {
@@ -126,6 +128,7 @@ app.get("/", (_req: Request, res: Response) => {
       videos: "/api/videos",
       danceStyles: "/api/dance-styles",
       intensityLevels: "/api/intensity-levels",
+      admins: "/api/admins",
     },
   });
 });

@@ -73,6 +73,7 @@ const envSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET_NAME: z.string().optional().default("fitness-dance-videos"),
   R2_ENDPOINT: z.string().optional(),
+  R2_PUBLIC_URL: z.string().url().optional(), // Public URL for R2 bucket (e.g., https://pub-xxx.r2.dev)
 });
 
 // Validate environment variables

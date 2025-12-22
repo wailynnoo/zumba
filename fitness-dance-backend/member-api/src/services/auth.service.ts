@@ -5,6 +5,7 @@ import prisma from "../config/database";
 import { hashPassword, comparePassword, validatePasswordStrength } from "../utils/password";
 import { generateTokenPair, verifyRefreshToken, parseJwtExpiryToMs } from "../utils/jwt";
 import { hashToken, extractDeviceInfo, extractIpAddress } from "../utils/token";
+import { t, SupportedLanguage } from "../i18n";
 import crypto from "crypto";
 import { Request } from "express";
 
@@ -14,6 +15,7 @@ export interface RegisterInput {
   password: string;
   displayName?: string;
   avatarUrl?: string;
+  gender?: string;
   dateOfBirth?: string; // ISO date string (YYYY-MM-DD)
   address?: string;
   weight?: number; // Weight in kg
@@ -30,104 +32,129 @@ export class AuthService {
    * Register a new user
    */
   async register(input: RegisterInput, req?: Request) {
+    // Get language from request
+    const lang: SupportedLanguage = (req as any)?.language || 'en';
+
+    // Sanitize inputs (trim whitespace, lowercase email)
+    const sanitizedInput = {
+      ...input,
+      email: input.email?.trim().toLowerCase(),
+      phoneNumber: input.phoneNumber?.trim(),
+      displayName: input.displayName?.trim(),
+      address: input.address?.trim(),
+    };
+
     // Validate that at least email or phone is provided
-    if (!input.email && !input.phoneNumber) {
-      throw new Error("Either email or phone number is required");
+    if (!sanitizedInput.email && !sanitizedInput.phoneNumber) {
+      throw new Error(t('auth.register.emailOrPhoneRequired', lang));
     }
 
     // Validate password strength
-    const passwordValidation = validatePasswordStrength(input.password);
+    const passwordValidation = validatePasswordStrength(sanitizedInput.password);
     if (!passwordValidation.valid) {
-      throw new Error(passwordValidation.errors.join(", "));
+      // Use translated message for password validation
+      throw new Error(t('auth.register.passwordWeak', lang));
     }
 
-    // Check if user already exists
-    if (input.email) {
-      const existingEmail = await prisma.user.findUnique({
-        where: { email: input.email },
+    // Check if user already exists (excluding soft-deleted users)
+    if (sanitizedInput.email) {
+      const existingEmail = await prisma.user.findFirst({
+        where: { 
+          email: sanitizedInput.email,
+          deletedAt: null, // Only check active (non-deleted) users
+        },
       });
       if (existingEmail) {
-        throw new Error("User with this email already exists");
+        throw new Error(t('auth.register.emailExists', lang));
       }
     }
 
-    if (input.phoneNumber) {
-      const existingPhone = await prisma.user.findUnique({
-        where: { phoneNumber: input.phoneNumber },
+    if (sanitizedInput.phoneNumber) {
+      const existingPhone = await prisma.user.findFirst({
+        where: { 
+          phoneNumber: sanitizedInput.phoneNumber,
+          deletedAt: null, // Only check active (non-deleted) users
+        },
       });
       if (existingPhone) {
-        throw new Error("User with this phone number already exists");
+        throw new Error(t('auth.register.phoneExists', lang));
       }
     }
 
     // Hash password
-    const passwordHash = await hashPassword(input.password);
+    const passwordHash = await hashPassword(sanitizedInput.password);
 
     // Generate verification tokens
-    const emailVerificationToken = input.email
+    const emailVerificationToken = sanitizedInput.email
       ? crypto.randomBytes(32).toString("hex")
       : null;
-    const phoneVerificationCode = input.phoneNumber
+    const phoneVerificationCode = sanitizedInput.phoneNumber
       ? Math.floor(100000 + Math.random() * 900000).toString() // 6-digit code
       : null;
 
-    // Create user with all profile information
-    const user = await prisma.user.create({
-      data: {
-        // Authentication
-        email: input.email || null,
-        phoneNumber: input.phoneNumber || null,
-        passwordHash,
-        
-        // Profile Information
-        displayName: input.displayName || null,
-        avatarUrl: input.avatarUrl || null,
-        dateOfBirth: input.dateOfBirth ? new Date(input.dateOfBirth) : null,
-        address: input.address || null,
-        weight: input.weight || null,
-        
-        // Email Verification
-        emailVerificationToken: emailVerificationToken
-          ? crypto.createHash("sha256").update(emailVerificationToken).digest("hex")
-          : null,
-        emailVerificationExpiresAt: emailVerificationToken
-          ? new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
-          : null,
-        
-        // Phone Verification
-        phoneVerificationCode: phoneVerificationCode
-          ? await hashPassword(phoneVerificationCode) // Hash the code
-          : null,
-        phoneVerificationExpiresAt: phoneVerificationCode
-          ? new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
-          : null,
-      },
-    });
+    // Use transaction to ensure atomicity: user creation and token creation happen together
+    const { user, tokens } = await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
+      // Create user with all profile information
+      const user = await tx.user.create({
+        data: {
+          // Authentication
+          email: sanitizedInput.email || null,
+          phoneNumber: sanitizedInput.phoneNumber || null,
+          passwordHash,
+          
+          // Profile Information
+          displayName: sanitizedInput.displayName || null,
+          avatarUrl: sanitizedInput.avatarUrl || null,
+          gender: sanitizedInput.gender || null,
+          dateOfBirth: sanitizedInput.dateOfBirth ? new Date(sanitizedInput.dateOfBirth) : null,
+          address: sanitizedInput.address || null,
+          weight: sanitizedInput.weight || null,
+          
+          // Email Verification
+          emailVerificationToken: emailVerificationToken
+            ? crypto.createHash("sha256").update(emailVerificationToken).digest("hex")
+            : null,
+          emailVerificationExpiresAt: emailVerificationToken
+            ? new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+            : null,
+          
+          // Phone Verification
+          phoneVerificationCode: phoneVerificationCode
+            ? await hashPassword(phoneVerificationCode) // Hash the code
+            : null,
+          phoneVerificationExpiresAt: phoneVerificationCode
+            ? new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+            : null,
+        },
+      });
 
-    // Generate tokens (user can use app but with limited access until verified)
-    const tokens = generateTokenPair({
-      userId: user.id,
-      email: user.email || undefined,
-      phoneNumber: user.phoneNumber || undefined,
-    });
-
-    // Extract device metadata
-    const deviceInfo = req ? extractDeviceInfo(req) : "Unknown";
-    const ipAddress = req ? extractIpAddress(req) : "Unknown";
-    const userAgent = req?.headers["user-agent"] || "Unknown";
-
-    // Hash and save refresh token (secure storage)
-    const tokenHash = hashToken(tokens.refreshToken);
-    const refreshExpiryMs = parseJwtExpiryToMs(process.env.JWT_REFRESH_EXPIRES_IN || "7d");
-    await prisma.refreshToken.create({
-      data: {
+      // Generate tokens (user can use app but with limited access until verified)
+      const tokens = generateTokenPair({
         userId: user.id,
-        tokenHash,
-        expiresAt: new Date(Date.now() + refreshExpiryMs),
-        deviceInfo,
-        ipAddress,
-        userAgent,
-      },
+        email: user.email || undefined,
+        phoneNumber: user.phoneNumber || undefined,
+      });
+
+      // Extract device metadata
+      const deviceInfo = req ? extractDeviceInfo(req) : "Unknown";
+      const ipAddress = req ? extractIpAddress(req) : "Unknown";
+      const userAgent = req?.headers["user-agent"] || "Unknown";
+
+      // Hash and save refresh token (secure storage)
+      const tokenHash = hashToken(tokens.refreshToken);
+      const refreshExpiryMs = parseJwtExpiryToMs(process.env.JWT_REFRESH_EXPIRES_IN || "7d");
+      await tx.refreshToken.create({
+        data: {
+          userId: user.id,
+          tokenHash,
+          expiresAt: new Date(Date.now() + refreshExpiryMs),
+          deviceInfo,
+          ipAddress,
+          userAgent,
+        },
+      });
+
+      return { user, tokens };
     });
 
     // Calculate age from dateOfBirth
@@ -142,6 +169,7 @@ export class AuthService {
         phoneNumber: user.phoneNumber,
         displayName: user.displayName,
         avatarUrl: user.avatarUrl,
+        gender: user.gender,
         dateOfBirth: user.dateOfBirth,
         age,
         address: user.address,
@@ -162,6 +190,9 @@ export class AuthService {
    * Login user
    */
   async login(input: LoginInput, req?: Request) {
+    // Get language from request
+    const lang: SupportedLanguage = (req as any)?.language || 'en';
+
     // Find user by email or phone
     const user = await prisma.user.findFirst({
       where: {
@@ -173,18 +204,18 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new Error("Invalid credentials");
+      throw new Error(t('auth.login.invalidCredentials', lang));
     }
 
     // Check password
     const passwordValid = await comparePassword(input.password, user.passwordHash);
     if (!passwordValid) {
-      throw new Error("Invalid credentials");
+      throw new Error(t('auth.login.invalidCredentials', lang));
     }
 
     // Check if user is active
     if (!user.isActive) {
-      throw new Error("Account is deactivated");
+      throw new Error(t('auth.login.accountDeactivated', lang));
     }
 
     // Update last login
@@ -238,6 +269,7 @@ export class AuthService {
         phoneNumber: user.phoneNumber,
         displayName: user.displayName,
         avatarUrl: user.avatarUrl,
+        gender: user.gender,
         dateOfBirth: user.dateOfBirth,
         age: age,
         address: user.address,
@@ -253,6 +285,8 @@ export class AuthService {
    * Refresh access token
    */
   async refreshToken(refreshToken: string, req?: Request) {
+    const lang: SupportedLanguage = (req as any)?.language || 'en';
+
     // Verify refresh token
     const payload = verifyRefreshToken(refreshToken);
 
@@ -270,7 +304,7 @@ export class AuthService {
     });
 
     if (!tokenRecord) {
-      throw new Error("Invalid or expired refresh token");
+      throw new Error(t('auth.refresh.invalidToken', lang));
     }
 
     // Get user
@@ -279,7 +313,7 @@ export class AuthService {
     });
 
     if (!user || !user.isActive) {
-      throw new Error("User not found or inactive");
+      throw new Error(t('auth.login.accountDeactivated', lang));
     }
 
     // Generate new token pair
@@ -320,7 +354,8 @@ export class AuthService {
   /**
    * Logout - revoke refresh token
    */
-  async logout(refreshToken: string) {
+  async logout(refreshToken: string, req?: Request) {
+    const lang: SupportedLanguage = (req as any)?.language || 'en';
     const tokenHash = hashToken(refreshToken);
 
     // Revoke the refresh token
@@ -335,13 +370,14 @@ export class AuthService {
       },
     });
 
-    return { message: "Logged out successfully" };
+    return { message: t('auth.logout.success', lang) };
   }
 
   /**
    * Logout from all devices - revoke all refresh tokens for a user
    */
-  async logoutAll(userId: string) {
+  async logoutAll(userId: string, req?: Request) {
+    const lang: SupportedLanguage = (req as any)?.language || 'en';
     await prisma.refreshToken.updateMany({
       where: {
         userId,
@@ -353,13 +389,14 @@ export class AuthService {
       },
     });
 
-    return { message: "Logged out from all devices successfully" };
+    return { message: t('auth.logout.allDevices', lang) };
   }
 
   /**
    * Verify email
    */
-  async verifyEmail(token: string) {
+  async verifyEmail(token: string, req?: Request) {
+    const lang: SupportedLanguage = (req as any)?.language || 'en';
     const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
     const user = await prisma.user.findFirst({
@@ -370,7 +407,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new Error("Invalid or expired verification token");
+      throw new Error(t('auth.verify.invalidToken', lang));
     }
 
     await prisma.user.update({
@@ -383,32 +420,33 @@ export class AuthService {
       },
     });
 
-    return { message: "Email verified successfully" };
+    return { message: t('auth.verify.emailSuccess', lang) };
   }
 
   /**
    * Verify phone
    */
-  async verifyPhone(phoneNumber: string, code: string) {
+  async verifyPhone(phoneNumber: string, code: string, req?: Request) {
+    const lang: SupportedLanguage = (req as any)?.language || 'en';
     const user = await prisma.user.findUnique({
       where: { phoneNumber },
     });
 
     if (!user) {
-      throw new Error("User not found");
+      throw new Error(t('auth.verify.userNotFound', lang));
     }
 
     if (!user.phoneVerificationCode || !user.phoneVerificationExpiresAt) {
-      throw new Error("No verification code found");
+      throw new Error(t('auth.verify.noCode', lang));
     }
 
     if (user.phoneVerificationExpiresAt < new Date()) {
-      throw new Error("Verification code expired");
+      throw new Error(t('auth.verify.codeExpired', lang));
     }
 
     const codeValid = await comparePassword(code, user.phoneVerificationCode);
     if (!codeValid) {
-      throw new Error("Invalid verification code");
+      throw new Error(t('auth.verify.invalidCode', lang));
     }
 
     await prisma.user.update({
@@ -421,7 +459,7 @@ export class AuthService {
       },
     });
 
-    return { message: "Phone number verified successfully" };
+    return { message: t('auth.verify.phoneSuccess', lang) };
   }
 }
 

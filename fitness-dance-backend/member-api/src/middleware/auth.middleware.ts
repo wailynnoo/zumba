@@ -53,6 +53,7 @@ export async function authenticate(
         dateOfBirth: true,
         address: true,
         weight: true,
+        preferredLang: true,
       },
     });
 
@@ -75,6 +76,9 @@ export async function authenticate(
       address: user.address || undefined,
       weight: user.weight || undefined,
     };
+
+    // Set user's preferred language on request for i18n
+    (req as any).userPreferredLang = user.preferredLang || 'en';
 
     next();
   } catch (error: any) {
@@ -113,6 +117,7 @@ export async function optionalAuthenticate(
           dateOfBirth: true,
           address: true,
           weight: true,
+          preferredLang: true,
         },
       });
 
@@ -127,6 +132,8 @@ export async function optionalAuthenticate(
           address: user.address || undefined,
           weight: user.weight || undefined,
         };
+        // Set user's preferred language on request for i18n
+        (req as any).userPreferredLang = user.preferredLang || 'en';
       }
     }
 

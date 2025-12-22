@@ -292,6 +292,127 @@ export class FileUploadService {
   }
 
   /**
+   * Upload admin avatar and update admin record
+   */
+  async uploadAdminAvatar(file: Express.Multer.File, adminId: string) {
+    // Verify admin exists
+    const admin = await prisma.admin.findFirst({
+      where: {
+        id: adminId,
+        deletedAt: null,
+      },
+    });
+
+    if (!admin) {
+      // Delete uploaded file if admin doesn't exist
+      if (file.path) {
+        this.deleteFile(file.path);
+      }
+      throw new Error("Admin not found");
+    }
+
+    // Delete old avatar if it exists (only if it's a local file, not external URL)
+    if (admin.avatarUrl && !this.isAbsoluteUrl(admin.avatarUrl)) {
+      try {
+        const oldPath = path.join(process.cwd(), admin.avatarUrl);
+        if (fs.existsSync(oldPath)) {
+          fs.unlinkSync(oldPath);
+        }
+      } catch (error) {
+        console.error("Error deleting old admin avatar:", error);
+        // Continue even if deletion fails
+      }
+    }
+
+    if (!file.path) {
+      throw new Error("File path not available");
+    }
+
+    // Generate URL for the uploaded file
+    const relativePath = `uploads/admins/${path.basename(file.path)}`;
+    const imageUrl = `${this.getBaseUrl()}/${relativePath}`;
+
+    // Update admin with new avatar URL
+    const updatedAdmin = await prisma.admin.update({
+      where: { id: adminId },
+      data: { avatarUrl: imageUrl },
+      include: {
+        adminRole: true,
+        createdBy: {
+          select: {
+            id: true,
+            email: true,
+            displayName: true,
+          },
+        },
+      },
+    });
+
+    // Remove passwordHash from response
+    const { passwordHash: _, ...adminWithoutPassword } = updatedAdmin;
+
+    return {
+      admin: adminWithoutPassword,
+      avatarUrl: imageUrl,
+    };
+  }
+
+  /**
+   * Delete admin avatar
+   */
+  async deleteAdminAvatar(adminId: string) {
+    // Get admin
+    const admin = await prisma.admin.findFirst({
+      where: {
+        id: adminId,
+        deletedAt: null,
+      },
+    });
+
+    if (!admin) {
+      throw new Error("Admin not found");
+    }
+
+    if (!admin.avatarUrl) {
+      throw new Error("Admin has no avatar to delete");
+    }
+
+    // Delete from local filesystem if it's a local file (not external URL)
+    if (!this.isAbsoluteUrl(admin.avatarUrl)) {
+      try {
+        const filePath = path.join(process.cwd(), this.extractRelativePath(admin.avatarUrl));
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      } catch (error) {
+        console.error("Error deleting admin avatar file:", error);
+        // Continue even if deletion fails
+      }
+    }
+
+    // Update admin (set avatarUrl to null)
+    const updatedAdmin = await prisma.admin.update({
+      where: { id: adminId },
+      data: { avatarUrl: null },
+      include: {
+        adminRole: true,
+        createdBy: {
+          select: {
+            id: true,
+            email: true,
+            displayName: true,
+          },
+        },
+      },
+    });
+
+    // Remove passwordHash from response
+    const { passwordHash: _, ...adminWithoutPassword } = updatedAdmin;
+
+    return adminWithoutPassword;
+  }
+
+  /**
    * Convert relative path to full URL (for API responses)
    */
   getFullImageUrl(relativePath: string | null): string | null {

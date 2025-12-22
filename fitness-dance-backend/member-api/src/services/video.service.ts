@@ -37,20 +37,6 @@ export class VideoService {
             slug: true,
           },
         },
-        danceStyle: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
-        intensityLevel: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
       },
     });
 
@@ -80,8 +66,6 @@ export class VideoService {
     categoryId?: string;
     subcategoryId?: string;
     collectionId?: string;
-    danceStyleId?: string;
-    intensityLevelId?: string;
     videoType?: string;
     search?: string;
   }) {
@@ -102,12 +86,6 @@ export class VideoService {
     }
     if (params.collectionId) {
       where.collectionId = params.collectionId;
-    }
-    if (params.danceStyleId) {
-      where.danceStyleId = params.danceStyleId;
-    }
-    if (params.intensityLevelId) {
-      where.intensityLevelId = params.intensityLevelId;
     }
     if (params.videoType) {
       where.videoType = params.videoType;
@@ -146,20 +124,6 @@ export class VideoService {
             },
           },
           collection: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-            },
-          },
-          danceStyle: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-            },
-          },
-          intensityLevel: {
             select: {
               id: true,
               name: true,

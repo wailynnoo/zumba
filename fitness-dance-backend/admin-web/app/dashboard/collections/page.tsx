@@ -8,6 +8,7 @@ import collectionService from "@/lib/services/collectionService";
 import categoryService from "@/lib/services/categoryService";
 import type { Category } from "@/lib/services/categoryService";
 import type { Collection } from "@/lib/services/collectionService";
+import ImageCropModal from "@/components/ImageCropModal";
 
 interface Pagination {
   page: number;
@@ -60,6 +61,10 @@ export default function CollectionsPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [cropModal, setCropModal] = useState<{ isOpen: boolean; imageSrc: string }>({
+    isOpen: false,
+    imageSrc: "",
+  });
   
   // Signed URLs cache for R2 images
   const [imageUrlCache, setImageUrlCache] = useState<Record<string, string>>({});
@@ -248,6 +253,12 @@ export default function CollectionsPage() {
           setUploadingImage(true);
           try {
             await collectionService.uploadCollectionThumbnail(collectionId, selectedImage);
+            // Clear cache for this collection to force refresh
+            setImageUrlCache((prev) => {
+              const newCache = { ...prev };
+              delete newCache[collectionId];
+              return newCache;
+            });
           } catch (uploadErr: any) {
             console.error("Image upload error:", uploadErr);
             setError(uploadErr.response?.data?.message || "Failed to upload thumbnail");
@@ -266,6 +277,12 @@ export default function CollectionsPage() {
           setUploadingImage(true);
           try {
             await collectionService.uploadCollectionThumbnail(collectionId, selectedImage);
+            // Clear cache for this collection to force refresh
+            setImageUrlCache((prev) => {
+              const newCache = { ...prev };
+              delete newCache[collectionId];
+              return newCache;
+            });
           } catch (uploadErr: any) {
             console.error("Image upload error:", uploadErr);
             setError(uploadErr.response?.data?.message || "Failed to upload thumbnail");
@@ -438,6 +455,7 @@ export default function CollectionsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Validate file type
     const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
     if (!allowedTypes.includes(file.type)) {
       setError("Only JPEG, PNG, and WebP images are allowed");
@@ -445,19 +463,31 @@ export default function CollectionsPage() {
       return;
     }
 
+    // Validate file size (5MB max)
     if (file.size > 5 * 1024 * 1024) {
       setError("Image size must be less than 5MB");
       setTimeout(() => setError(""), 5000);
       return;
     }
 
-    setSelectedImage(file);
+    // Create preview URL and show crop modal
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const imageSrc = e.target?.result as string;
+      setCropModal({ isOpen: true, imageSrc });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCropComplete = (croppedFile: File) => {
+    setSelectedImage(croppedFile);
     
+    // Create preview from cropped file
     const reader = new FileReader();
     reader.onloadend = () => {
       setImagePreview(reader.result as string);
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(croppedFile);
   };
 
   const handleRemoveImage = () => {
@@ -597,7 +627,7 @@ export default function CollectionsPage() {
                 collections.map((collection) => (
                   <tr key={collection.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <CollectionThumbnail collection={collection} />
+                      <CollectionThumbnail key={`${collection.id}-${collection.thumbnailUrl}`} collection={collection} />
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900">{collection.name}</div>
@@ -802,11 +832,11 @@ export default function CollectionsPage() {
                   
                   {/* Image Preview */}
                   {imagePreview && (
-                    <div className="mb-4 relative">
+                    <div className="mb-4 relative w-full aspect-square max-w-xs mx-auto">
                       <img
                         src={imagePreview}
                         alt="Preview"
-                        className="w-full h-48 object-cover rounded-lg border-2 border-gray-200"
+                        className="w-full h-full object-cover rounded-lg border-2 border-gray-200"
                       />
                       <button
                         type="button"
@@ -819,17 +849,52 @@ export default function CollectionsPage() {
                       </button>
                     </div>
                   )}
+
+                  {/* File Input - Only show if no image is selected/previewed */}
+                  {!imagePreview && (
+                    <div className="flex items-center gap-3">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        id="thumbnail"
+                        accept="image/jpeg,image/jpg,image/png,image/webp"
+                        onChange={handleImageSelect}
+                        className="hidden"
+                      />
+                      <label
+                        htmlFor="thumbnail"
+                        className="flex-1 cursor-pointer rounded-lg border-2 border-dashed border-gray-300 px-4 py-3 text-center hover:border-[#6BBD45] hover:bg-[#6BBD45]/5 transition-colors"
+                      >
+                        <div className="flex flex-col items-center gap-2">
+                          <svg className="h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <span className="text-sm text-gray-600">Click to upload image</span>
+                          <span className="text-xs text-gray-500">JPEG, PNG, WebP (max 5MB)</span>
+                        </div>
+                      </label>
+                    </div>
+                  )}
                   
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/jpg,image/png,image/webp"
-                    onChange={handleImageSelect}
-                    className="w-full rounded-lg border-2 border-gray-200 px-4 py-3 text-sm text-gray-900 focus:border-[#6BBD45] focus:outline-none focus:ring-4 focus:ring-[#6BBD45]/20 transition-all file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#6BBD45] file:text-white hover:file:bg-[#5A9E3A]"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    JPEG, PNG, or WebP. Max 5MB.
-                  </p>
+                  {/* Show change image button if preview exists */}
+                  {imagePreview && (
+                    <div className="flex items-center gap-3">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        id="thumbnail"
+                        accept="image/jpeg,image/jpg,image/png,image/webp"
+                        onChange={handleImageSelect}
+                        className="hidden"
+                      />
+                      <label
+                        htmlFor="thumbnail"
+                        className="cursor-pointer rounded-lg border-2 border-gray-300 px-4 py-2 text-center text-sm text-gray-700 hover:border-[#6BBD45] hover:bg-[#6BBD45]/5 transition-colors"
+                      >
+                        Change Image
+                      </label>
+                    </div>
+                  )}
                 </div>
 
                 {/* Featured */}
@@ -922,6 +987,16 @@ export default function CollectionsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Image Crop Modal */}
+      {cropModal.isOpen && (
+        <ImageCropModal
+          imageSrc={cropModal.imageSrc}
+          onClose={() => setCropModal({ isOpen: false, imageSrc: "" })}
+          onCropComplete={handleCropComplete}
+          aspectRatio={1}
+        />
       )}
     </div>
   );

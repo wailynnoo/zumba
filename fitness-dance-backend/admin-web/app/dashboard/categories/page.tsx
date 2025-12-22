@@ -7,6 +7,7 @@ import { z } from "zod";
 import api from "@/lib/api";
 import categoryService from "@/lib/services/categoryService";
 import { getFullImageUrl } from "@/lib/utils/imageUrl";
+import ImageCropModal from "@/components/ImageCropModal";
 
 interface Category {
   id: string;
@@ -32,9 +33,7 @@ const categorySchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name must be 100 characters or less"),
   slug: z.string().min(1, "Slug is required").max(100, "Slug must be 100 characters or less").regex(/^[a-z0-9-]+$/, "Slug must contain only lowercase letters, numbers, and hyphens"),
   description: z.string().default(""),
-  iconUrl: z.string().default("").refine((val) => !val || val === "" || z.string().url().safeParse(val).success, {
-    message: "Icon URL must be a valid URL",
-  }),
+  iconUrl: z.string().optional(),
   isActive: z.boolean().default(true),
   sortOrder: z.number().int().default(0),
 });
@@ -69,9 +68,15 @@ export default function CategoriesPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [cropModal, setCropModal] = useState<{ isOpen: boolean; imageSrc: string }>({
+    isOpen: false,
+    imageSrc: "",
+  });
   
   // Signed URLs cache for R2 images
   const [imageUrlCache, setImageUrlCache] = useState<Record<string, string>>({});
+  // Track which category IDs we're currently fetching to prevent duplicate requests
+  const fetchingRef = useRef<Set<string>>(new Set());
 
   // React Hook Form
   const {
@@ -163,55 +168,98 @@ export default function CategoriesPage() {
     fetchCategories();
   }, [fetchCategories]);
 
-  // Helper function to get image URL (handles R2 keys and legacy URLs)
-  const getImageUrl = useCallback(async (category: Category): Promise<string | null> => {
-    if (!category.iconUrl) return null;
-    
-    // If it's already a full URL (signed URL or legacy URL), return as is
-    if (category.iconUrl.startsWith("http://") || category.iconUrl.startsWith("https://")) {
-      return category.iconUrl;
-    }
-    
-    // If it's an R2 key (starts with categories/), fetch signed URL
-    if (category.iconUrl.startsWith("categories/")) {
-      // Check cache first
-      if (imageUrlCache[category.id]) {
-        return imageUrlCache[category.id];
-      }
-      
+  // Fetch all category image URLs in batch after categories are loaded
+  useEffect(() => {
+    if (loading || categories.length === 0) return;
+
+    const fetchAllImageUrls = async () => {
+      // Filter categories that need signed URLs (R2 keys)
+      // Check both cache and fetching ref to avoid duplicate requests
+      const categoriesNeedingUrls = categories.filter(
+        (cat) =>
+          cat.iconUrl &&
+          cat.iconUrl.startsWith("categories/") &&
+          !imageUrlCache[cat.id] &&
+          !fetchingRef.current.has(cat.id) &&
+          !cat.iconUrl.startsWith("http://") &&
+          !cat.iconUrl.startsWith("https://")
+      );
+
+      if (categoriesNeedingUrls.length === 0) return;
+
+      // Mark all as being fetched
+      categoriesNeedingUrls.forEach((cat) => {
+        fetchingRef.current.add(cat.id);
+      });
+
       try {
-        const signedUrl = await categoryService.getCategoryImageUrl(category.id);
-        setImageUrlCache((prev) => ({ ...prev, [category.id]: signedUrl }));
-        return signedUrl;
+        // Fetch all image URLs in parallel
+        const urlPromises = categoriesNeedingUrls.map(async (cat) => {
+          try {
+            const signedUrl = await categoryService.getCategoryImageUrl(cat.id);
+            return { categoryId: cat.id, url: signedUrl };
+          } catch (error) {
+            console.error(`Error fetching signed URL for category ${cat.id}:`, error);
+            return null;
+          }
+        });
+
+        const results = await Promise.all(urlPromises);
+        
+        // Update cache with all fetched URLs at once
+        const newCacheEntries: Record<string, string> = {};
+        results.forEach((result) => {
+          if (result) {
+            newCacheEntries[result.categoryId] = result.url;
+            // Remove from fetching set
+            fetchingRef.current.delete(result.categoryId);
+          }
+        });
+
+        if (Object.keys(newCacheEntries).length > 0) {
+          setImageUrlCache((prev) => ({ ...prev, ...newCacheEntries }));
+        }
       } catch (error) {
-        console.error("Error fetching signed URL for category image:", error);
-        return null;
+        // On error, remove from fetching set
+        categoriesNeedingUrls.forEach((cat) => {
+          fetchingRef.current.delete(cat.id);
+        });
       }
-    }
-    
-    // Legacy: Use getFullImageUrl for old local file paths
-    return getFullImageUrl(category.iconUrl);
-  }, [imageUrlCache]);
+    };
+
+    fetchAllImageUrls();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categories.map(c => `${c.id}:${c.iconUrl || ''}`).join(','), loading]); // Re-fetch when category IDs or iconUrls change
   
   // Component to display category image with R2 support
   const CategoryImage = ({ category }: { category: Category }) => {
-    const [imageUrl, setImageUrl] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
+    // Get image URL from cache or construct it directly
+    const getDisplayUrl = (): string | null => {
+      if (!category.iconUrl) return null;
+      
+      // If it's already a full URL (signed URL or legacy URL), return as is
+      if (category.iconUrl.startsWith("http://") || category.iconUrl.startsWith("https://")) {
+        return category.iconUrl;
+      }
+      
+      // If it's an R2 key, check cache first
+      if (category.iconUrl.startsWith("categories/")) {
+        return imageUrlCache[category.id] || null;
+      }
+      
+      // Legacy: Use getFullImageUrl for old local file paths
+      return getFullImageUrl(category.iconUrl);
+    };
+
+    const displayUrl = getDisplayUrl();
     
-    useEffect(() => {
-      getImageUrl(category).then((url) => {
-        setImageUrl(url);
-        setLoading(false);
-      });
-    }, [category, getImageUrl]);
-    
-    if (loading || !imageUrl) {
+    if (!displayUrl) {
       return null;
     }
     
     return (
       <img
-        src={imageUrl}
+        src={displayUrl}
         alt={category.name}
         className="h-10 w-10 rounded-lg object-cover"
         onError={(e) => {
@@ -227,7 +275,7 @@ export default function CategoriesPage() {
         name: data.name.trim(),
         slug: data.slug.trim(),
         description: data.description?.trim() || undefined,
-        iconUrl: data.iconUrl?.trim() || undefined,
+        // iconUrl is set via image upload, not manually
         isActive: data.isActive,
         sortOrder: data.sortOrder,
       };
@@ -241,6 +289,34 @@ export default function CategoriesPage() {
           setUploadingImage(true);
           try {
             await categoryService.uploadCategoryImage(editingCategory.id, selectedImage);
+            // Clear the image URL cache for this category to force refresh
+            setImageUrlCache((prev) => {
+              const newCache = { ...prev };
+              delete newCache[editingCategory.id];
+              return newCache;
+            });
+            // Refresh category data to get the uploaded image URL
+            const updatedCategory = await categoryService.getCategoryById(editingCategory.id);
+            // Set server image as preview
+            if (updatedCategory.iconUrl) {
+              if (updatedCategory.iconUrl.startsWith("categories/")) {
+                try {
+                  const signedUrl = await categoryService.getCategoryImageUrl(updatedCategory.id);
+                  setImagePreview(signedUrl);
+                  // Update cache with new signed URL
+                  setImageUrlCache((prev) => ({ ...prev, [editingCategory.id]: signedUrl }));
+                } catch (error) {
+                  console.error("Error fetching signed URL:", error);
+                }
+              } else {
+                setImagePreview(updatedCategory.iconUrl);
+              }
+            }
+            // Clear selected image (server image is now shown)
+            setSelectedImage(null);
+            if (fileInputRef.current) {
+              fileInputRef.current.value = "";
+            }
           } catch (uploadErr: any) {
             console.error("Image upload error:", uploadErr);
             setError(uploadErr.response?.data?.message || "Failed to upload image");
@@ -258,6 +334,28 @@ export default function CategoriesPage() {
           setUploadingImage(true);
           try {
             await categoryService.uploadCategoryImage(newCategory.id, selectedImage);
+            // Refresh category data to get the uploaded image URL
+            const updatedCategory = await categoryService.getCategoryById(newCategory.id);
+            // Set server image as preview
+            if (updatedCategory.iconUrl) {
+              if (updatedCategory.iconUrl.startsWith("categories/")) {
+                try {
+                  const signedUrl = await categoryService.getCategoryImageUrl(updatedCategory.id);
+                  setImagePreview(signedUrl);
+                  // Update cache with new signed URL
+                  setImageUrlCache((prev) => ({ ...prev, [updatedCategory.id]: signedUrl }));
+                } catch (error) {
+                  console.error("Error fetching signed URL:", error);
+                }
+              } else {
+                setImagePreview(updatedCategory.iconUrl);
+              }
+            }
+            // Clear selected image (server image is now shown)
+            setSelectedImage(null);
+            if (fileInputRef.current) {
+              fileInputRef.current.value = "";
+            }
           } catch (uploadErr: any) {
             console.error("Image upload error:", uploadErr);
             setError(uploadErr.response?.data?.message || "Failed to upload image");
@@ -273,6 +371,11 @@ export default function CategoriesPage() {
       setEditingCategory(null);
       setSelectedImage(null);
       setImagePreview(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      // Clear cache and refresh categories to show updated images
+      setImageUrlCache({});
       await fetchCategories();
     } catch (err: any) {
       const errorMessage = err.response?.data?.message || "Failed to save category";
@@ -297,7 +400,7 @@ export default function CategoriesPage() {
       name: String(categoryData.name || ""),
       slug: String(categoryData.slug || ""),
       description: String(categoryData.description || ""),
-      iconUrl: String(categoryData.iconUrl || categoryData.icon_url || ""),
+      iconUrl: "", // Managed via image upload, not manual input
       isActive: Boolean(categoryData.isActive ?? categoryData.is_active ?? true),
       sortOrder: Number(categoryData.sortOrder ?? categoryData.sort_order ?? 0),
     });
@@ -433,14 +536,24 @@ export default function CategoriesPage() {
       return;
     }
 
-    setSelectedImage(file);
+    // Create preview URL and show crop modal
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const imageSrc = e.target?.result as string;
+      setCropModal({ isOpen: true, imageSrc });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCropComplete = (croppedFile: File) => {
+    setSelectedImage(croppedFile);
     
-    // Create preview
+    // Create preview from cropped file
     const reader = new FileReader();
     reader.onloadend = () => {
       setImagePreview(reader.result as string);
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(croppedFile);
   };
 
   const handleRemoveImage = () => {
@@ -605,7 +718,12 @@ export default function CategoriesPage() {
                 <tr key={category.id} className="hover:bg-gray-50">
                   <td className="whitespace-nowrap px-6 py-4">
                     <div className="flex items-center gap-3">
-                      {category.iconUrl && <CategoryImage category={category} />}
+                      {category.iconUrl && (
+                        <CategoryImage 
+                          key={`${category.id}-${category.iconUrl}`}
+                          category={category} 
+                        />
+                      )}
                       <span className="text-sm font-medium text-gray-900">{category.name}</span>
                     </div>
                   </td>
@@ -637,15 +755,6 @@ export default function CategoriesPage() {
                       >
                         Edit
                       </button>
-                      {category.iconUrl && (
-                        <button
-                          onClick={() => handleDeleteImage(category.id)}
-                          className="rounded-lg px-3 py-1 text-orange-600 font-medium transition-colors hover:bg-orange-50 hover:text-orange-700"
-                          title="Delete Image"
-                        >
-                          Remove Image
-                        </button>
-                      )}
                       <button
                         onClick={() => handleDeleteClick(category)}
                         className="rounded-lg px-3 py-1 text-red-600 font-medium transition-colors hover:bg-red-50 hover:text-red-700"
@@ -814,16 +923,16 @@ export default function CategoriesPage() {
                 
                 {/* Image Preview */}
                 {imagePreview && (
-                  <div className="mb-4 relative">
+                  <div className="mb-4 relative w-full aspect-square max-w-xs mx-auto">
                     <img
                       src={imagePreview}
                       alt="Preview"
-                      className="w-full h-48 object-cover rounded-lg border-2 border-gray-200"
+                      className="w-full h-full object-cover rounded-lg border-2 border-gray-200"
                     />
                     <button
                       type="button"
                       onClick={handleRemoveImage}
-                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-2 hover:bg-red-600 transition-colors"
+                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-2 hover:bg-red-600 transition-colors shadow-lg"
                     >
                       <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -832,55 +941,52 @@ export default function CategoriesPage() {
                   </div>
                 )}
 
-                {/* File Input */}
-                <div className="flex items-center gap-3">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    id="image"
-                    accept="image/jpeg,image/jpg,image/png,image/webp"
-                    onChange={handleImageSelect}
-                    className="hidden"
-                  />
-                  <label
-                    htmlFor="image"
-                    className="flex-1 cursor-pointer rounded-lg border-2 border-dashed border-gray-300 px-4 py-3 text-center hover:border-[#6BBD45] hover:bg-[#6BBD45]/5 transition-colors"
-                  >
-                    <div className="flex flex-col items-center gap-2">
-                      <svg className="h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <span className="text-sm text-gray-600">
-                        {imagePreview ? "Change Image" : "Click to upload image"}
-                      </span>
-                      <span className="text-xs text-gray-500">JPEG, PNG, WebP (max 5MB)</span>
-                    </div>
-                  </label>
-                </div>
+                {/* File Input - Only show if no image is selected/previewed */}
+                {!imagePreview && (
+                  <div className="flex items-center gap-3">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      id="image"
+                      accept="image/jpeg,image/jpg,image/png,image/webp"
+                      onChange={handleImageSelect}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="image"
+                      className="flex-1 cursor-pointer rounded-lg border-2 border-dashed border-gray-300 px-4 py-3 text-center hover:border-[#6BBD45] hover:bg-[#6BBD45]/5 transition-colors"
+                    >
+                      <div className="flex flex-col items-center gap-2">
+                        <svg className="h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <span className="text-sm text-gray-600">Click to upload image</span>
+                        <span className="text-xs text-gray-500">JPEG, PNG, WebP (max 5MB)</span>
+                      </div>
+                    </label>
+                  </div>
+                )}
+                
+                {/* Show change image button if preview exists */}
+                {imagePreview && (
+                  <div className="flex items-center gap-3">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      id="image"
+                      accept="image/jpeg,image/jpg,image/png,image/webp"
+                      onChange={handleImageSelect}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="image"
+                      className="cursor-pointer rounded-lg border-2 border-gray-300 px-4 py-2 text-center text-sm text-gray-700 hover:border-[#6BBD45] hover:bg-[#6BBD45]/5 transition-colors"
+                    >
+                      Change Image
+                    </label>
+                  </div>
+                )}
 
-                {/* Icon URL (fallback) */}
-                <div className="mt-4">
-                  <label htmlFor="iconUrl" className="block text-sm font-medium text-gray-700 mb-2">
-                    Icon URL (or enter URL manually)
-                  </label>
-                  <input
-                    type="url"
-                    id="iconUrl"
-                    {...register("iconUrl")}
-                    className={`w-full rounded-lg border-2 px-4 py-3 text-sm text-gray-900 transition-all ${
-                      errors.iconUrl
-                        ? "border-red-300 focus:border-red-500 focus:ring-red-500"
-                        : "border-gray-200 focus:border-[#6BBD45] focus:ring-[#6BBD45]/20"
-                    } focus:outline-none focus:ring-4`}
-                    placeholder="https://example.com/icon.png"
-                  />
-                  {errors.iconUrl && (
-                    <p className="mt-1 text-sm text-red-600">{errors.iconUrl.message}</p>
-                  )}
-                  <p className="mt-1 text-xs text-gray-500">
-                    Leave empty if uploading image above
-                  </p>
-                </div>
               </div>
 
               {/* Sort Order */}
@@ -996,6 +1102,16 @@ export default function CategoriesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Image Crop Modal */}
+      {cropModal.isOpen && (
+        <ImageCropModal
+          imageSrc={cropModal.imageSrc}
+          onClose={() => setCropModal({ isOpen: false, imageSrc: "" })}
+          onCropComplete={handleCropComplete}
+          aspectRatio={1}
+        />
       )}
     </div>
   );

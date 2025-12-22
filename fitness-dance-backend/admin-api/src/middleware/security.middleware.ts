@@ -3,6 +3,7 @@
 
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { env } from "../config/env";
 
 /**
  * Helmet configuration for security headers
@@ -32,12 +33,14 @@ export const securityHeaders = helmet({
 
 /**
  * General API rate limiter
- * Limits: 100 requests per 15 minutes per IP
+ * Configurable via environment variables:
+ * - RATE_LIMIT_WINDOW_MS: Time window in milliseconds (default: 900000 = 15 minutes)
+ * - RATE_LIMIT_MAX_REQUESTS: Max requests per window (default: 100)
  * Note: For file uploads, we use a separate limiter with higher limits
  */
 export const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  windowMs: env.RATE_LIMIT_WINDOW_MS, // Configurable window (default: 15 minutes)
+  max: env.RATE_LIMIT_MAX_REQUESTS, // Configurable max requests (default: 100)
   message: {
     success: false,
     message: "Too many requests from this IP, please try again later.",
@@ -56,11 +59,13 @@ export const apiLimiter = rateLimit({
 
 /**
  * Strict rate limiter for authentication endpoints
- * Limits: 5 requests per 15 minutes per IP
+ * Configurable via environment variables:
+ * - RATE_LIMIT_WINDOW_MS: Time window in milliseconds (default: 900000 = 15 minutes)
+ * - RATE_LIMIT_AUTH_MAX_REQUESTS: Max auth requests per window (default: 5)
  */
 export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 login attempts per windowMs
+  windowMs: env.RATE_LIMIT_WINDOW_MS, // Configurable window (default: 15 minutes)
+  max: env.RATE_LIMIT_AUTH_MAX_REQUESTS, // Configurable max auth requests (default: 5)
   message: {
     success: false,
     message: "Too many authentication attempts, please try again later.",

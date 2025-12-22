@@ -9,6 +9,7 @@ import {
   apiLimiter,
   bodySizeLimit,
 } from "./middleware/security.middleware";
+import { t, SupportedLanguage } from "./i18n";
 
 // Load environment variables
 dotenv.config();
@@ -49,6 +50,10 @@ app.use(
 app.use(express.json({ limit: bodySizeLimit.json }));
 app.use(express.urlencoded({ extended: true, limit: bodySizeLimit.urlencoded }));
 
+// Language detection middleware (must be before routes)
+import { languageMiddleware } from "./i18n/middleware";
+app.use(languageMiddleware);
+
 // Apply general rate limiting to all routes
 app.use(apiLimiter);
 
@@ -64,8 +69,12 @@ app.get("/health", (_req: Request, res: Response) => {
 // API Routes
 import authRoutes from "./routes/auth.routes";
 import categoryRoutes from "./routes/category.routes";
+import videoRoutes from "./routes/video.routes";
+import collectionRoutes from "./routes/collection.routes";
 app.use("/api/auth", authRoutes);
 app.use("/api/categories", categoryRoutes);
+app.use("/api/videos", videoRoutes);
+app.use("/api/collections", collectionRoutes);
 
 // Root route
 app.get("/", (_req: Request, res: Response) => {
@@ -76,15 +85,17 @@ app.get("/", (_req: Request, res: Response) => {
       health: "/health",
       auth: "/api/auth",
       categories: "/api/categories",
+      videos: "/api/videos",
     },
   });
 });
 
 // 404 handler
 app.use((req: Request, res: Response) => {
+  const lang: SupportedLanguage = (req as any).language || 'en';
   res.status(404).json({
     error: "Not Found",
-    message: `Route ${req.method} ${req.path} not found`,
+    message: t('errors.routeNotFound', lang),
   });
 });
 

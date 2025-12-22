@@ -10,6 +10,7 @@ import categoryService from "@/lib/services/categoryService";
 import collectionService from "@/lib/services/collectionService";
 import videoStepService, { VideoStep } from "@/lib/services/videoStepService";
 import UploadProgress from "../../components/UploadProgress";
+import VideoFrameSelector from "../../components/VideoFrameSelector";
 
 // Zod schema for form validation
 const videoSchema = z.object({
@@ -71,6 +72,8 @@ export default function EditVideoPage() {
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
   const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [showFrameSelector, setShowFrameSelector] = useState(false);
+  const [videoWatchUrl, setVideoWatchUrl] = useState<string | null>(null);
   
   // Upload progress state
   const [videoProgress, setVideoProgress] = useState(0);
@@ -255,6 +258,7 @@ export default function EditVideoPage() {
           try {
             const watchUrl = await videoService.getVideoWatchUrl(videoData.id);
             setVideoPreview(watchUrl);
+            setVideoWatchUrl(watchUrl); // Store for frame selector
           } catch (err: any) {
             console.error("Error fetching watch URL:", err);
             // If file not found (404), clear preview and cloudflareVideoId - file was deleted from R2 but DB still has reference
@@ -365,18 +369,21 @@ export default function EditVideoPage() {
             setVideo({ ...video, cloudflareVideoId });
           }
           
-          // After upload, fetch signed URL if it's an R2 key
-          if (result.videoUrl && result.videoUrl.startsWith("videos/")) {
-            try {
-              const watchUrl = await videoService.getVideoWatchUrl(videoId);
-              setVideoPreview(watchUrl);
-            } catch (err) {
-              console.error("Error fetching video watch URL after upload:", err);
-              setVideoPreview(result.videoUrl); // Fallback
+            // After upload, fetch signed URL if it's an R2 key
+            if (result.videoUrl && result.videoUrl.startsWith("videos/")) {
+              try {
+                const watchUrl = await videoService.getVideoWatchUrl(videoId);
+                setVideoPreview(watchUrl);
+                setVideoWatchUrl(watchUrl); // Store for frame selector
+              } catch (err) {
+                console.error("Error fetching video watch URL after upload:", err);
+                setVideoPreview(result.videoUrl); // Fallback
+                setVideoWatchUrl(result.videoUrl);
+              }
+            } else {
+              setVideoPreview(result.videoUrl);
+              setVideoWatchUrl(result.videoUrl);
             }
-          } else {
-            setVideoPreview(result.videoUrl);
-          }
           
           // Clear selected video file after successful upload
           setSelectedVideoFile(null);
@@ -546,6 +553,15 @@ export default function EditVideoPage() {
       setThumbnailPreview(reader.result as string);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleFrameSelect = (frameFile: File) => {
+    setSelectedThumbnail(frameFile);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setThumbnailPreview(reader.result as string);
+    };
+    reader.readAsDataURL(frameFile);
   };
 
   const handleAudioSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -860,14 +876,37 @@ export default function EditVideoPage() {
                 )}
               </div>
               {(!video?.thumbnailUrl || video?.thumbnailUrl === "" || !thumbnailPreview || selectedThumbnail) && (
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleThumbnailSelect}
-                  className="w-full rounded-lg border-2 border-gray-200 px-4 py-2 text-sm text-gray-900 focus:border-[#6BBD45] focus:outline-none focus:ring-4 focus:ring-[#6BBD45]/20"
-                />
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    {selectedVideoFile && (
+                      <button
+                        type="button"
+                        onClick={() => setShowFrameSelector(true)}
+                        className="px-4 py-2 bg-[#6BBD45] text-white rounded-lg text-sm font-medium hover:bg-[#5A9E3A] transition-colors"
+                      >
+                        Select from Video
+                      </button>
+                    )}
+                    <label className="flex-1 cursor-pointer">
+                      <span className="block w-full rounded-lg border-2 border-gray-200 px-4 py-2 text-sm text-gray-700 text-center hover:border-[#6BBD45] hover:bg-[#6BBD45]/5 transition-colors">
+                        Upload Image
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleThumbnailSelect}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                  {!selectedVideoFile && video?.cloudflareVideoId && (
+                    <p className="text-xs text-gray-500">
+                      💡 To select a thumbnail from video frames, upload a new video file above first.
+                    </p>
+                  )}
+                </div>
               )}
-              {thumbnailPreview && video?.thumbnailUrl && (
+              {thumbnailPreview && (video?.thumbnailUrl || selectedThumbnail) && (
                 <div className="mt-2">
                   <img 
                     src={thumbnailPreview} 
@@ -878,6 +917,11 @@ export default function EditVideoPage() {
                       setThumbnailPreview(null);
                     }}
                   />
+                  {selectedThumbnail && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      New thumbnail selected: {selectedThumbnail.name}
+                    </p>
+                  )}
                 </div>
               )}
               {(uploadingThumbnail || thumbnailProgress > 0) && (
@@ -1249,6 +1293,16 @@ export default function EditVideoPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Video Frame Selector Modal */}
+      {showFrameSelector && selectedVideoFile && (
+        <VideoFrameSelector
+          videoFile={selectedVideoFile}
+          videoUrl={null}
+          onFrameSelect={handleFrameSelect}
+          onClose={() => setShowFrameSelector(false)}
+        />
       )}
     </div>
   );

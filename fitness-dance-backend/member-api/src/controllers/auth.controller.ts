@@ -3,6 +3,7 @@
 
 import { Request, Response } from "express";
 import { authService } from "../services/auth.service";
+import { t, SupportedLanguage } from "../i18n";
 import { z } from "zod";
 
 // Validation schemas
@@ -16,7 +17,11 @@ const registerSchema = z.object({
   
   // Profile Information
   displayName: z.string().min(1, "Name is required").max(100, "Name must be less than 100 characters"),
-  avatarUrl: z.string().url("Invalid URL format").optional().or(z.literal("")),
+  avatarUrl: z.union([
+    z.string().url("Invalid URL format"),
+    z.literal("")
+  ]).optional(),
+  gender: z.enum(["male", "female", "other", "prefer_not_to_say"]).optional(),
   dateOfBirth: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .refine((date) => {
@@ -67,19 +72,21 @@ export class AuthController {
    */
   async register(req: Request, res: Response): Promise<void> {
     try {
+      const lang: SupportedLanguage = (req as any).language || 'en';
       const validated = registerSchema.parse(req.body);
       const result = await authService.register(validated, req);
 
       res.status(201).json({
         success: true,
-        message: "User registered successfully",
+        message: t('auth.register.success', lang),
         data: result,
       });
     } catch (error: any) {
+      const lang: SupportedLanguage = (req as any).language || 'en';
       if (error instanceof z.ZodError) {
         res.status(400).json({
           success: false,
-          message: "Validation error",
+          message: t('errors.validationError', lang),
           errors: error.issues,
         });
         return;
@@ -87,7 +94,7 @@ export class AuthController {
 
       res.status(400).json({
         success: false,
-        message: error.message || "Registration failed",
+        message: error.message || t('errors.validationError', lang),
       });
     }
   }
@@ -98,19 +105,21 @@ export class AuthController {
    */
   async login(req: Request, res: Response): Promise<void> {
     try {
+      const lang: SupportedLanguage = (req as any).language || 'en';
       const validated = loginSchema.parse(req.body);
       const result = await authService.login(validated, req);
 
       res.status(200).json({
         success: true,
-        message: "Login successful",
+        message: t('auth.login.success', lang),
         data: result,
       });
     } catch (error: any) {
+      const lang: SupportedLanguage = (req as any).language || 'en';
       if (error instanceof z.ZodError) {
         res.status(400).json({
           success: false,
-          message: "Validation error",
+          message: t('errors.validationError', lang),
           errors: error.issues,
         });
         return;
@@ -118,7 +127,7 @@ export class AuthController {
 
       res.status(401).json({
         success: false,
-        message: error.message || "Login failed",
+        message: error.message || t('auth.login.invalidCredentials', lang),
       });
     }
   }
@@ -129,19 +138,21 @@ export class AuthController {
    */
   async refreshToken(req: Request, res: Response): Promise<void> {
     try {
+      const lang: SupportedLanguage = (req as any).language || 'en';
       const validated = refreshTokenSchema.parse(req.body);
       const tokens = await authService.refreshToken(validated.refreshToken, req);
 
       res.status(200).json({
         success: true,
-        message: "Token refreshed successfully",
+        message: t('auth.refresh.success', lang),
         data: tokens,
       });
     } catch (error: any) {
+      const lang: SupportedLanguage = (req as any).language || 'en';
       if (error instanceof z.ZodError) {
         res.status(400).json({
           success: false,
-          message: "Validation error",
+          message: t('errors.validationError', lang),
           errors: error.issues,
         });
         return;
@@ -149,7 +160,7 @@ export class AuthController {
 
       res.status(401).json({
         success: false,
-        message: error.message || "Token refresh failed",
+        message: error.message || t('auth.refresh.invalidToken', lang),
       });
     }
   }
@@ -161,17 +172,18 @@ export class AuthController {
   async logout(req: Request, res: Response): Promise<void> {
     try {
       const validated = refreshTokenSchema.parse(req.body);
-      const result = await authService.logout(validated.refreshToken);
+      const result = await authService.logout(validated.refreshToken, req);
 
       res.status(200).json({
         success: true,
         message: result.message,
       });
     } catch (error: any) {
+      const lang: SupportedLanguage = (req as any).language || 'en';
       if (error instanceof z.ZodError) {
         res.status(400).json({
           success: false,
-          message: "Validation error",
+          message: t('errors.validationError', lang),
           errors: error.issues,
         });
         return;
@@ -179,7 +191,7 @@ export class AuthController {
 
       res.status(400).json({
         success: false,
-        message: error.message || "Logout failed",
+        message: error.message || t('errors.serverError', lang),
       });
     }
   }
@@ -191,17 +203,18 @@ export class AuthController {
   async verifyEmail(req: Request, res: Response): Promise<void> {
     try {
       const validated = verifyEmailSchema.parse(req.body);
-      const result = await authService.verifyEmail(validated.token);
+      const result = await authService.verifyEmail(validated.token, req);
 
       res.status(200).json({
         success: true,
         message: result.message,
       });
     } catch (error: any) {
+      const lang: SupportedLanguage = (req as any).language || 'en';
       if (error instanceof z.ZodError) {
         res.status(400).json({
           success: false,
-          message: "Validation error",
+          message: t('errors.validationError', lang),
           errors: error.issues,
         });
         return;
@@ -209,7 +222,7 @@ export class AuthController {
 
       res.status(400).json({
         success: false,
-        message: error.message || "Email verification failed",
+        message: error.message || t('auth.verify.invalidToken', lang),
       });
     }
   }
@@ -223,7 +236,8 @@ export class AuthController {
       const validated = verifyPhoneSchema.parse(req.body);
       const result = await authService.verifyPhone(
         validated.phoneNumber,
-        validated.code
+        validated.code,
+        req
       );
 
       res.status(200).json({
@@ -231,10 +245,11 @@ export class AuthController {
         message: result.message,
       });
     } catch (error: any) {
+      const lang: SupportedLanguage = (req as any).language || 'en';
       if (error instanceof z.ZodError) {
         res.status(400).json({
           success: false,
-          message: "Validation error",
+          message: t('errors.validationError', lang),
           errors: error.issues,
         });
         return;
@@ -242,7 +257,7 @@ export class AuthController {
 
       res.status(400).json({
         success: false,
-        message: error.message || "Phone verification failed",
+        message: error.message || t('auth.verify.invalidCode', lang),
       });
     }
   }
@@ -254,24 +269,26 @@ export class AuthController {
    */
   async logoutAll(req: any, res: Response): Promise<void> {
     try {
+      const lang: SupportedLanguage = (req as any).language || 'en';
       if (!req.user) {
         res.status(401).json({
           success: false,
-          message: "Authentication required",
+          message: t('errors.unauthorized', lang),
         });
         return;
       }
 
-      const result = await authService.logoutAll(req.user.userId);
+      const result = await authService.logoutAll(req.user.userId, req);
 
       res.status(200).json({
         success: true,
         message: result.message,
       });
     } catch (error: any) {
+      const lang: SupportedLanguage = (req as any).language || 'en';
       res.status(400).json({
         success: false,
-        message: error.message || "Logout failed",
+        message: error.message || t('errors.serverError', lang),
       });
     }
   }

@@ -64,12 +64,13 @@ export class R2StorageService {
     if (fileUrl.includes("/")) {
       const urlParts = fileUrl.split("/");
       const keyIndex = urlParts.findIndex(
-        (part) => part === "videos" || part === "thumbnails" || part === "audio"
+        (part) => part === "videos" || part === "thumbnails" || part === "audio" || 
+                  part === "collections" || part === "categories"
       );
       if (keyIndex >= 0) {
         key = urlParts.slice(keyIndex).join("/");
       } else {
-        const match = fileUrl.match(/(videos|thumbnails|audio)\/.+$/);
+        const match = fileUrl.match(/(videos|thumbnails|audio|collections|categories)\/.+$/);
         if (match) {
           key = match[0];
         }

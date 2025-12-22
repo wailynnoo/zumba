@@ -160,5 +160,43 @@ export const querySchemas = {
       }),
     })
     .passthrough(), // Allow other query params to pass through
+
+  /**
+   * Admin list query schema (combines pagination, boolean, search, and role filter)
+   */
+  adminList: z
+    .object({
+      page: z
+        .string()
+        .optional()
+        .transform((val) => (val ? parseInt(val, 10) : undefined))
+        .refine((val) => val === undefined || (val > 0 && val <= 1000), {
+          message: "Page must be between 1 and 1000",
+        }),
+      limit: z
+        .string()
+        .optional()
+        .transform((val) => (val ? parseInt(val, 10) : undefined))
+        .refine((val) => val === undefined || (val > 0 && val <= 100), {
+          message: "Limit must be between 1 and 100",
+        }),
+      isActive: z
+        .string()
+        .optional()
+        .transform((val) => {
+          if (val === undefined) return undefined;
+          if (val === "true") return true;
+          if (val === "false") return false;
+          return val;
+        })
+        .refine((val) => val === undefined || typeof val === "boolean", {
+          message: "isActive must be 'true' or 'false'",
+        }),
+      adminRoleId: z.string().uuid("Invalid role ID").optional(),
+      search: z.string().optional().refine((val) => !val || val.length <= 200, {
+        message: "Search term must be 200 characters or less",
+      }),
+    })
+    .passthrough(), // Allow other query params to pass through
 };
 

@@ -1,0 +1,55 @@
+{
+  "auth": {
+    "register": {
+      "success": "User registered successfully",
+      "emailExists": "User with this email already exists",
+      "phoneExists": "User with this phone number already exists",
+      "emailOrPhoneRequired": "Either email or phone number is required",
+      "passwordWeak": "Password must be at least 8 characters and contain uppercase, lowercase, number, and special character"
+    },
+    "login": {
+      "success": "Login successful",
+      "invalidCredentials": "Invalid credentials",
+      "accountDeactivated": "Account is deactivated"
+    },
+    "logout": {
+      "success": "Logged out successfully",
+      "allDevices": "Logged out from all devices successfully"
+    },
+    "refresh": {
+      "success": "Token refreshed successfully",
+      "invalidToken": "Invalid or expired refresh token"
+    },
+    "verify": {
+      "emailSuccess": "Email verified successfully",
+      "phoneSuccess": "Phone number verified successfully",
+      "invalidToken": "Invalid or expired verification token",
+      "codeExpired": "Verification code expired",
+      "noCode": "No verification code found",
+      "invalidCode": "Invalid verification code",
+      "userNotFound": "User not found"
+    }
+  },
+  "validation": {
+    "emailInvalid": "Invalid email format",
+    "phoneMinLength": "Phone number must be at least 10 digits",
+    "passwordMinLength": "Password must be at least 8 characters",
+    "displayNameRequired": "Name is required",
+    "displayNameMaxLength": "Name must be less than 100 characters",
+    "ageRange": "Age must be between 13 and 120 years",
+    "weightRange": "Weight must be between 20 and 500 kg",
+    "addressMaxLength": "Address must be less than 500 characters",
+    "dateFormat": "Date must be in YYYY-MM-DD format",
+    "genderInvalid": "Gender must be one of: male, female, other, prefer_not_to_say",
+    "avatarUrlInvalid": "Invalid URL format"
+  },
+  "errors": {
+    "notFound": "Resource not found",
+    "unauthorized": "Authentication required",
+    "forbidden": "Access denied",
+    "serverError": "Internal server error",
+    "validationError": "Validation error",
+    "routeNotFound": "Route not found"
+  }
+}
+

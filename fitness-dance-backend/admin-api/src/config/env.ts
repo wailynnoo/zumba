@@ -97,6 +97,32 @@ const envSchema = z.object({
       return process.env.NODE_ENV === "production";
     }),
 
+  // Rate Limiting
+  RATE_LIMIT_WINDOW_MS: z
+    .string()
+    .optional()
+    .default("900000") // 15 minutes in milliseconds
+    .transform((val) => parseInt(val, 10))
+    .refine((val) => val > 0, {
+      message: "RATE_LIMIT_WINDOW_MS must be a positive number",
+    }),
+  RATE_LIMIT_MAX_REQUESTS: z
+    .string()
+    .optional()
+    .default("100")
+    .transform((val) => parseInt(val, 10))
+    .refine((val) => val > 0, {
+      message: "RATE_LIMIT_MAX_REQUESTS must be a positive number",
+    }),
+  RATE_LIMIT_AUTH_MAX_REQUESTS: z
+    .string()
+    .optional()
+    .default("5")
+    .transform((val) => parseInt(val, 10))
+    .refine((val) => val > 0, {
+      message: "RATE_LIMIT_AUTH_MAX_REQUESTS must be a positive number",
+    }),
+
   // Super Admin (optional, for seeding)
   SUPER_ADMIN_PASSWORD: z.string().optional(),
 
@@ -167,6 +193,9 @@ export const {
   JWT_AUDIENCE,
   CORS_ORIGIN,
   TRUST_PROXY,
+  RATE_LIMIT_WINDOW_MS,
+  RATE_LIMIT_MAX_REQUESTS,
+  RATE_LIMIT_AUTH_MAX_REQUESTS,
   SUPER_ADMIN_PASSWORD,
   R2_ACCOUNT_ID,
   R2_ACCESS_KEY_ID,
