@@ -1,6 +1,6 @@
 # Dockerfile for admin-api
 # Build from fitness-dance-backend root directory
-# Updated: Force rebuild v2
+# Updated: Force rebuild v3
 
 FROM node:20-slim
 
@@ -16,28 +16,32 @@ WORKDIR /app
 # Copy prisma folder first (needed for prisma generate)
 COPY prisma ./prisma
 
-# Copy admin-api package files (explicitly copy both files)
+# Copy admin-api package files
 COPY admin-api/package.json ./admin-api/
 COPY admin-api/package-lock.json ./admin-api/
-COPY admin-api/scripts ./admin-api/scripts/
 
-# Install dependencies in admin-api (skip postinstall - we'll run prisma generate manually)
+# Install dependencies (skip postinstall - we'll run prisma generate manually)
 WORKDIR /app/admin-api
 RUN npm ci --ignore-scripts
 
-# Copy admin-api source code
-COPY admin-api ./
+# Verify @prisma/client is installed
+RUN ls -la node_modules/@prisma/client || echo "prisma client not found"
 
-# Generate Prisma client explicitly (before TypeScript build)
+# Copy admin-api source code (excluding node_modules via .dockerignore)
+WORKDIR /app
+COPY admin-api ./admin-api/
+
+# Generate Prisma client
+WORKDIR /app/admin-api
 RUN npx prisma generate --schema=/app/prisma/schema.prisma
 
-# Build TypeScript (skip prisma generate since we already did it)
+# Build TypeScript
 RUN npx tsc
 
-# Remove devDependencies after build to reduce image size
+# Remove devDependencies after build
 RUN npm prune --production
 
-# Expose port (Railway will override this with PORT env var)
+# Expose port
 EXPOSE 3000
 
 # Start the application
