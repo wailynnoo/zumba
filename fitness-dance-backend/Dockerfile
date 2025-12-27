@@ -36,9 +36,18 @@ RUN echo "=== Debug: Checking installations ===" && \
     echo "npm ls output:" && npm ls @prisma/client 2>&1 && \
     echo "Checking package.json:" && cat package.json | grep -A 2 prisma
 
-# Generate Prisma client directly from admin-api directory (where node_modules is)
-# This ensures Prisma can find @prisma/client
-RUN cd /app/admin-api && npx prisma generate --schema=/app/prisma/schema.prisma
+# Debug: Verify @prisma/client is actually accessible
+WORKDIR /app/admin-api
+RUN echo "=== Final verification ===" && \
+    test -f node_modules/@prisma/client/package.json && echo "✅ @prisma/client package.json exists" || echo "❌ package.json missing" && \
+    test -d node_modules/@prisma/client && echo "✅ @prisma/client directory exists" || echo "❌ directory missing" && \
+    cat node_modules/@prisma/client/package.json | grep version && \
+    which node && \
+    node --version && \
+    npm --version
+
+# Generate Prisma client using direct path to ensure it finds @prisma/client
+RUN ./node_modules/.bin/prisma generate --schema=/app/prisma/schema.prisma
 
 # Build TypeScript
 RUN npx tsc
