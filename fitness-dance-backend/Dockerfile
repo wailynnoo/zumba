@@ -1,9 +1,6 @@
 # Dockerfile for admin-api
-# Build from fitness-dance-backend root directory:
-#   docker build -f Dockerfile.admin-api -t admin-api .
-#   
-# For Railway: Deploy from root fitness-dance-backend directory
-# and set the Dockerfile path in Railway settings
+# Build from fitness-dance-backend root directory
+# Updated: Force rebuild v2
 
 FROM node:20-slim
 
