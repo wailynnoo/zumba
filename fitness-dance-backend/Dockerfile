@@ -23,12 +23,24 @@ COPY admin-api ./admin-api/
 WORKDIR /app/admin-api
 RUN npm install --ignore-scripts
 
-# Force install @prisma/client and prisma CLI to ensure they're available
-RUN npm install @prisma/client@^7.1.0 prisma@^7.1.0 --save-dev
+# Force install @prisma/client as dependency (not dev) and prisma CLI
+RUN npm install @prisma/client@^7.1.0 --save && \
+    npm install prisma@^7.1.0 --save-dev
 
-# Verify both are installed
-RUN test -d node_modules/@prisma/client && echo "✅ @prisma/client found" || echo "❌ @prisma/client missing" && \
-    test -d node_modules/prisma && echo "✅ prisma CLI found" || echo "❌ prisma CLI missing" && \
+# Verify both are installed (with proper error checking)
+RUN echo "=== Verifying installations ===" && \
+    if [ -d "node_modules/@prisma/client" ]; then \
+        echo "✅ @prisma/client directory exists"; \
+    else \
+        echo "❌ @prisma/client directory MISSING"; \
+        exit 1; \
+    fi && \
+    if [ -d "node_modules/prisma" ]; then \
+        echo "✅ prisma CLI directory exists"; \
+    else \
+        echo "❌ prisma CLI directory MISSING"; \
+        exit 1; \
+    fi && \
     npm ls @prisma/client prisma
 
 # Generate Prisma client (run from admin-api where node_modules exists)
