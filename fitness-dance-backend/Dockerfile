@@ -1,6 +1,6 @@
 # Dockerfile for admin-api
 # Build from fitness-dance-backend root directory
-# Updated: Force rebuild v4
+# Updated: Force rebuild v5
 
 FROM node:20-slim
 
@@ -23,7 +23,8 @@ COPY admin-api ./admin-api/
 WORKDIR /app/admin-api
 RUN npm ci --ignore-scripts
 
-# Generate Prisma client
+# Explicitly ensure @prisma/client is available and generate
+RUN npm ls @prisma/client || npm install @prisma/client@7.1.0
 RUN npx prisma generate --schema=/app/prisma/schema.prisma
 
 # Build TypeScript
