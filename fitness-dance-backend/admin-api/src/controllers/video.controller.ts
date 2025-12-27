@@ -4,6 +4,8 @@
 import { Request, Response } from "express";
 import { videoService, createVideoSchema, updateVideoSchema } from "../services/video.service";
 import { r2StorageService } from "../services/r2-storage.service";
+import { videoValidationService } from "../services/video-validation.service";
+import { videoConversionService } from "../services/video-conversion.service";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { z } from "zod";
 import * as fs from "fs";
@@ -203,6 +205,96 @@ export class VideoController {
         bufferLength: req.file.buffer?.length,
       });
 
+      // Check if file needs conversion (e.g., .mov files)
+      let videoBuffer = req.file.buffer;
+      let videoFilename = req.file.originalname;
+      let videoMimetype = req.file.mimetype;
+      let wasConverted = false;
+
+      const fileExt = path.extname(req.file.originalname).toLowerCase();
+      const needsConversion = [".mov", ".avi", ".mkv", ".wmv"].includes(fileExt);
+
+      if (needsConversion) {
+        // First check if ffmpeg is available
+        const ffmpegAvailable = await videoConversionService.checkFfmpegAvailable();
+        if (!ffmpegAvailable) {
+          console.error("[Video Upload] ffmpeg is not installed on the server");
+          res.status(400).json({
+            success: false,
+            message: `Cannot upload ${fileExt} files: ffmpeg is not installed on the server`,
+            recommendation: "Please convert the video manually to MP4 (H.264) before uploading, or ask the administrator to install ffmpeg on the server.",
+            conversionCommand: "ffmpeg -i input.mov -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k -movflags +faststart output.mp4",
+          });
+          return;
+        }
+
+        console.log(`[Video Upload] Converting ${fileExt} file to MP4 for mobile compatibility...`);
+        const conversionResult = await videoConversionService.convertToMP4(
+          req.file.buffer,
+          req.file.originalname
+        );
+
+        if (!conversionResult.success || !conversionResult.convertedBuffer) {
+          console.error("[Video Upload] Conversion failed:", conversionResult.error);
+          res.status(400).json({
+            success: false,
+            message: `Failed to convert ${fileExt} file: ${conversionResult.error || "Unknown error"}`,
+            recommendation: "Please convert the video manually to MP4 (H.264) before uploading.",
+            conversionCommand: "ffmpeg -i input.mov -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k -movflags +faststart output.mp4",
+          });
+          return;
+        }
+
+        videoBuffer = conversionResult.convertedBuffer;
+        videoFilename = videoFilename.replace(fileExt, ".mp4");
+        videoMimetype = "video/mp4";
+        wasConverted = true;
+        console.log(`[Video Upload] Conversion successful! Converted ${fileExt} to MP4 in ${conversionResult.duration?.toFixed(2)}s`);
+        console.log(`[Video Upload] Converted buffer size: ${videoBuffer.length} bytes`);
+        console.log(`[Video Upload] New filename: ${videoFilename}, mimetype: ${videoMimetype}`);
+        
+        // Verify converted buffer is valid
+        if (!videoBuffer || videoBuffer.length === 0) {
+          console.error("[Video Upload] Converted buffer is empty!");
+          res.status(400).json({
+            success: false,
+            message: "Video conversion produced an empty file",
+            recommendation: "Please convert the video manually to MP4 (H.264) before uploading.",
+          });
+          return;
+        }
+      }
+
+      // Full video validation (codec check)
+      console.log("[Video Upload] Validating video codec...");
+      console.log(`[Video Upload] Buffer size before validation: ${videoBuffer.length} bytes`);
+      const validation = await videoValidationService.validateVideo(
+        videoBuffer,
+        videoFilename
+      );
+
+      if (!validation.valid) {
+        console.error("[Video Upload] Video validation failed:", validation.errors);
+        res.status(400).json({
+          success: false,
+          message: "Video format/codec not supported",
+          errors: validation.errors,
+          warnings: validation.warnings,
+          videoInfo: validation.videoInfo,
+          recommendation: "Please convert your video to MP4 with H.264 codec using: ffmpeg -i input -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k output.mp4",
+        });
+        return;
+      }
+
+      // Log warnings but allow upload
+      if (validation.warnings.length > 0) {
+        console.warn("[Video Upload] Validation warnings:", validation.warnings);
+      }
+
+      if (validation.videoInfo) {
+        console.log("[Video Upload] Video info:", validation.videoInfo);
+      }
+
       if (!r2StorageService.isConfigured()) {
         console.error("[Video Upload] R2 storage is not configured");
         res.status(500).json({
@@ -228,17 +320,17 @@ export class VideoController {
         }
       }
 
-      // Generate unique file name
-      const fileName = r2StorageService.generateFileName(req.file.originalname, "video");
+      // Generate unique file name (use converted filename if conversion happened)
+      const fileName = r2StorageService.generateFileName(videoFilename, "video");
       console.log("[Video Upload] Generated file name:", fileName);
 
       // Detect video duration before uploading
       let durationSeconds: number | undefined;
-      const tempFilePath = path.join(os.tmpdir(), `video-${Date.now()}-${Math.random().toString(36).substring(7)}.${path.extname(req.file.originalname).slice(1)}`);
+      const tempFilePath = path.join(os.tmpdir(), `video-${Date.now()}-${Math.random().toString(36).substring(7)}.${path.extname(videoFilename).slice(1)}`);
       
       try {
         console.log("[Video Upload] Writing video to temp file for duration detection:", tempFilePath);
-        fs.writeFileSync(tempFilePath, req.file.buffer);
+        fs.writeFileSync(tempFilePath, videoBuffer);
         
         console.log("[Video Upload] Detecting video duration...");
         const duration = await getVideoDuration(tempFilePath);
@@ -261,10 +353,26 @@ export class VideoController {
 
       // Upload to R2
       console.log("[Video Upload] Uploading to R2...");
-      const videoUrl = await r2StorageService.uploadVideo(
-        req.file.buffer,
+      console.log("[Video Upload] Upload details:", {
+        bufferSize: videoBuffer.length,
         fileName,
-        req.file.mimetype
+        videoMimetype,
+        wasConverted,
+      });
+      
+      if (!videoBuffer || videoBuffer.length === 0) {
+        console.error("[Video Upload] ERROR: Buffer is empty before R2 upload!");
+        res.status(500).json({
+          success: false,
+          message: "Video buffer is empty - cannot upload to storage",
+        });
+        return;
+      }
+      
+      const videoUrl = await r2StorageService.uploadVideo(
+        videoBuffer,
+        fileName,
+        videoMimetype
       );
       console.log("[Video Upload] Upload successful! Video URL:", videoUrl);
 
@@ -281,11 +389,16 @@ export class VideoController {
 
       res.status(200).json({
         success: true,
-        message: "Video uploaded successfully",
+        message: wasConverted 
+          ? "Video uploaded successfully (converted to MP4 for mobile compatibility)" 
+          : "Video uploaded successfully",
         data: {
           videoUrl,
           video: updatedVideo,
+          videoInfo: validation.videoInfo,
         },
+        warnings: validation.warnings.length > 0 ? validation.warnings : undefined,
+        converted: wasConverted,
       });
     } catch (error: any) {
       console.error("[Video Upload] Error:", error);
