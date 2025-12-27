@@ -1,0 +1,44 @@
+# Dockerfile for admin-api
+# Build from fitness-dance-backend root directory:
+#   docker build -f Dockerfile.admin-api -t admin-api .
+#   
+# For Railway: Deploy from root fitness-dance-backend directory
+# and set the Dockerfile path in Railway settings
+
+FROM node:20-slim
+
+# Install ffmpeg for video conversion
+RUN apt-get update && \
+    apt-get install -y ffmpeg && \
+    rm -rf /var/lib/apt/lists/* && \
+    echo "FFmpeg installed:" && ffmpeg -version | head -1
+
+# Set working directory
+WORKDIR /app
+
+# Copy prisma folder first (needed for prisma generate)
+COPY prisma ./prisma
+
+# Copy admin-api package files
+COPY admin-api/package*.json ./admin-api/
+COPY admin-api/scripts ./admin-api/scripts/
+
+# Install dependencies in admin-api
+WORKDIR /app/admin-api
+RUN npm ci
+
+# Copy admin-api source code
+COPY admin-api ./
+
+# Build TypeScript (this will also run prisma generate via npm run build)
+RUN npm run build
+
+# Remove devDependencies after build to reduce image size
+RUN npm prune --production
+
+# Expose port (Railway will override this with PORT env var)
+EXPOSE 3000
+
+# Start the application
+CMD ["npm", "start"]
+

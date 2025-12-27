@@ -31,7 +31,7 @@ interface Pagination {
 // Zod schema for form validation
 const categorySchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name must be 100 characters or less"),
-  slug: z.string().min(1, "Slug is required").max(100, "Slug must be 100 characters or less").regex(/^[a-z0-9-]+$/, "Slug must contain only lowercase letters, numbers, and hyphens"),
+  slug: z.string().optional(), // Slug is auto-generated on backend, not required from frontend
   description: z.string().default(""),
   iconUrl: z.string().optional(),
   isActive: z.boolean().default(true),
@@ -98,8 +98,6 @@ export default function CategoriesPage() {
     },
   });
 
-  // Watch name to auto-generate slug
-  const nameValue = watch("name");
   const isEditing = !!editingCategory;
 
   // Debounce search input
@@ -111,29 +109,6 @@ export default function CategoriesPage() {
 
     return () => clearTimeout(timer);
   }, [searchTerm]);
-
-  // Auto-generate slug from name (only when creating, not editing)
-  useEffect(() => {
-    if (!isEditing && nameValue) {
-      const slug = nameValue
-        .toLowerCase()
-        .trim()
-        .replace(/[^\w\s-]/g, "")
-        .replace(/[\s_-]+/g, "-")
-        .replace(/^-+|-+$/g, "");
-      setValue("slug", slug);
-    }
-  }, [nameValue, isEditing, setValue]);
-
-  // Auto-generate slug from name
-  const generateSlug = (name: string): string => {
-    return name
-      .toLowerCase()
-      .trim()
-      .replace(/[^\w\s-]/g, "")
-      .replace(/[\s_-]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-  };
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -273,7 +248,7 @@ export default function CategoriesPage() {
     try {
       const payload = {
         name: data.name.trim(),
-        slug: data.slug.trim(),
+        // slug is auto-generated on backend, not needed from frontend
         description: data.description?.trim() || undefined,
         // iconUrl is set via image upload, not manually
         isActive: data.isActive,
@@ -398,7 +373,7 @@ export default function CategoriesPage() {
     // Set form values using react-hook-form's reset
     reset({
       name: String(categoryData.name || ""),
-      slug: String(categoryData.slug || ""),
+      slug: "", // Slug is auto-generated, not needed in form
       description: String(categoryData.description || ""),
       iconUrl: "", // Managed via image upload, not manual input
       isActive: Boolean(categoryData.isActive ?? categoryData.is_active ?? true),
@@ -624,7 +599,7 @@ export default function CategoriesPage() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => handleSearchChange(e.target.value)}
-                placeholder="Search categories by name, slug, or description..."
+                placeholder="Search categories by name or description..."
                 className="w-full rounded-lg border-2 border-gray-200 px-4 py-2.5 pl-10 pr-10 text-sm text-gray-900 focus:border-[#6BBD45] focus:outline-none focus:ring-4 focus:ring-[#6BBD45]/20 transition-all"
               />
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -682,9 +657,6 @@ export default function CategoriesPage() {
                 Name
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                Slug
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                 Description
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
@@ -698,7 +670,7 @@ export default function CategoriesPage() {
           <tbody className="divide-y divide-gray-200 bg-white">
             {categories.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
                   <div className="flex flex-col items-center">
                     <svg className="h-12 w-12 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
@@ -726,9 +698,6 @@ export default function CategoriesPage() {
                       )}
                       <span className="text-sm font-medium text-gray-900">{category.name}</span>
                     </div>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500 font-mono">
-                    {category.slug}
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-500">
                     {category.description || (
@@ -877,29 +846,7 @@ export default function CategoriesPage() {
                 )}
               </div>
 
-              {/* Slug */}
-              <div>
-                <label htmlFor="slug" className="block text-sm font-medium text-gray-700 mb-2">
-                  Slug <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  id="slug"
-                  {...register("slug")}
-                  className={`w-full rounded-lg border-2 px-4 py-3 text-sm font-mono text-gray-900 transition-all ${
-                    errors.slug
-                      ? "border-red-300 focus:border-red-500 focus:ring-red-500"
-                      : "border-gray-200 focus:border-[#6BBD45] focus:ring-[#6BBD45]/20"
-                  } focus:outline-none focus:ring-4`}
-                  placeholder="e.g., zumba-fitness"
-                />
-                {errors.slug && (
-                  <p className="mt-1 text-sm text-red-600">{errors.slug.message}</p>
-                )}
-                <p className="mt-1 text-xs text-gray-500">
-                  Lowercase letters, numbers, and hyphens only
-                </p>
-              </div>
+              {/* Slug is auto-generated on backend, no need to show in form */}
 
               {/* Description */}
               <div>

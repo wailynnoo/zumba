@@ -1,180 +1,183 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import adminService, { Admin } from "@/lib/services/adminService";
-import { getAccessToken } from "@/lib/auth";
+import { useEffect, useState, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import settingsService, { SystemSetting } from "@/lib/services/settingsService";
 
-// Schema for profile update
-const profileSchema = z.object({
-  displayName: z.string().max(100).optional().or(z.literal("")),
-  avatarUrl: z.string().url().optional().or(z.literal("")),
+// Schema for setting form
+const settingSchema = z.object({
+  key: z.string().min(1, "Key is required").max(100, "Key must be 100 characters or less"),
+  value: z.string().optional(),
+  type: z.enum(["string", "number", "boolean", "json"]),
+  category: z.string().optional(),
+  description: z.string().optional(),
 });
 
-type ProfileFormData = z.infer<typeof profileSchema>;
-
-// Simple JWT decode function (for getting payload only, no verification)
-function decodeJWT(token: string): any {
-  try {
-    const base64Url = token.split(".")[1];
-    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split("")
-        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-        .join("")
-    );
-    return JSON.parse(jsonPayload);
-  } catch (error) {
-    console.error("Failed to decode JWT:", error);
-    return null;
-  }
-}
+type SettingFormData = z.infer<typeof settingSchema>;
 
 export default function SettingsPage() {
-  const [currentAdmin, setCurrentAdmin] = useState<Admin | null>(null);
+  const [settings, setSettings] = useState<SystemSetting[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [isEditing, setIsEditing] = useState(false);
-  const [changePasswordModal, setChangePasswordModal] = useState<{ isOpen: boolean }>({
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingSetting, setEditingSetting] = useState<SystemSetting | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; setting: SystemSetting | null }>({
     isOpen: false,
+    setting: null,
   });
-  const [currentAdminId, setCurrentAdminId] = useState<string | null>(null);
 
-  // React Hook Form for profile editing
+  // Refs to prevent duplicate fetches
+  const hasFetchedRef = useRef(false);
+  const fetchingRef = useRef(false);
+
   const {
     register,
     handleSubmit,
     reset,
-    watch,
     formState: { errors, isSubmitting },
-  } = useForm<ProfileFormData>({
-    resolver: zodResolver(profileSchema),
+  } = useForm<SettingFormData>({
+    resolver: zodResolver(settingSchema),
     defaultValues: {
-      displayName: "",
-      avatarUrl: "",
+      key: "",
+      value: "",
+      type: "string",
+      category: "",
+      description: "",
     },
   });
 
-  // Get current admin ID from token
+  const isEditing = !!editingSetting;
+
   useEffect(() => {
-    const token = getAccessToken();
-    if (token) {
+    const fetchData = async () => {
+      if (fetchingRef.current || hasFetchedRef.current) return;
+      fetchingRef.current = true;
+
       try {
-        const decoded = decodeJWT(token);
-        setCurrentAdminId(decoded?.adminId || null);
-      } catch (err) {
-        console.error("Failed to decode token:", err);
+        setLoading(true);
+        setError("");
+
+        const [settingsData, categoriesData] = await Promise.all([
+          settingsService.getSettings(selectedCategory === "all" ? undefined : selectedCategory),
+          settingsService.getCategories(),
+        ]);
+
+        setSettings(settingsData);
+        setCategories(categoriesData);
+        hasFetchedRef.current = true;
+      } catch (err: any) {
+        setError(err.response?.data?.message || "Failed to load settings");
+      } finally {
+        setLoading(false);
+        fetchingRef.current = false;
       }
-    }
-  }, []);
+    };
 
-  // Fetch current admin details
-  const fetchCurrentAdmin = async () => {
-    if (!currentAdminId) return;
+    fetchData();
+  }, [selectedCategory]);
 
+  const fetchData = async () => {
     try {
-      setLoading(true);
-      setError("");
-      const admin = await adminService.getAdminById(currentAdminId);
-      setCurrentAdmin(admin);
-      // Reset form with current values
-      reset({
-        displayName: admin.displayName || "",
-        avatarUrl: admin.avatarUrl || "",
-      });
+      const [settingsData, categoriesData] = await Promise.all([
+        settingsService.getSettings(selectedCategory === "all" ? undefined : selectedCategory),
+        settingsService.getCategories(),
+      ]);
+      setSettings(settingsData);
+      setCategories(categoriesData);
     } catch (err: any) {
-      console.error("Failed to fetch admin:", err);
-      setError(err.response?.data?.message || "Failed to load profile");
-    } finally {
-      setLoading(false);
+      setError(err.response?.data?.message || "Failed to load settings");
     }
   };
 
-  useEffect(() => {
-    if (currentAdminId) {
-      fetchCurrentAdmin();
-    }
-  }, [currentAdminId]);
-
-  const handleChangePassword = async (oldPassword: string, newPassword: string) => {
-    if (!currentAdminId) return;
-
+  const onSubmit = async (data: SettingFormData) => {
     try {
       setError("");
       setSuccess("");
-      await adminService.changePassword(currentAdminId, { oldPassword, newPassword });
-      setChangePasswordModal({ isOpen: false });
-      setSuccess("Password changed successfully");
+
+      if (editingSetting) {
+        await settingsService.updateSetting(editingSetting.key, {
+          value: data.value || undefined,
+          type: data.type,
+          category: data.category || undefined,
+          description: data.description || undefined,
+        });
+        setSuccess("Setting updated successfully");
+      } else {
+        await settingsService.createSetting({
+          key: data.key,
+          value: data.value,
+          type: data.type,
+          category: data.category,
+          description: data.description,
+        });
+        setSuccess("Setting created successfully");
+      }
+
+      setIsModalOpen(false);
+      reset();
+      setEditingSetting(null);
+      hasFetchedRef.current = false;
+      await fetchData();
       setTimeout(() => setSuccess(""), 5000);
     } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to change password");
+      setError(err.response?.data?.message || "Failed to save setting");
       setTimeout(() => setError(""), 5000);
     }
   };
 
-  const handleEditProfile = () => {
-    if (currentAdmin) {
+  const handleEdit = (setting: SystemSetting) => {
       reset({
-        displayName: currentAdmin.displayName || "",
-        avatarUrl: currentAdmin.avatarUrl || "",
-      });
-      setIsEditing(true);
-    }
+      key: setting.key,
+      value: setting.value || "",
+      type: setting.type,
+      category: setting.category || "",
+      description: setting.description || "",
+    });
+    setEditingSetting(setting);
+    setIsModalOpen(true);
   };
 
-  const handleCancelEdit = () => {
-    if (currentAdmin) {
-      reset({
-        displayName: currentAdmin.displayName || "",
-        avatarUrl: currentAdmin.avatarUrl || "",
-      });
-      setIsEditing(false);
-    }
-  };
-
-  const onSubmitProfile = async (data: ProfileFormData) => {
-    if (!currentAdminId) return;
+  const handleDelete = async () => {
+    if (!deleteConfirm.setting) return;
 
     try {
       setError("");
       setSuccess("");
-      const updateData: any = {};
-      if (data.displayName !== undefined) {
-        updateData.displayName = data.displayName.trim() || null;
-      }
-      if (data.avatarUrl !== undefined) {
-        updateData.avatarUrl = data.avatarUrl.trim() || null;
-      }
-
-      await adminService.updateAdmin(currentAdminId, updateData);
-      setIsEditing(false);
-      setSuccess("Profile updated successfully");
-      await fetchCurrentAdmin(); // Refresh profile data
+      await settingsService.deleteSetting(deleteConfirm.setting.key);
+      setDeleteConfirm({ isOpen: false, setting: null });
+      setSuccess("Setting deleted successfully");
+      hasFetchedRef.current = false;
+      await fetchData();
       setTimeout(() => setSuccess(""), 5000);
     } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to update profile");
+      setError(err.response?.data?.message || "Failed to delete setting");
       setTimeout(() => setError(""), 5000);
     }
   };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-600">Loading profile...</div>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
       {/* Header */}
+      <div className="flex items-center justify-between">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Profile Settings</h1>
-        <p className="text-gray-600 mt-1">Manage your account settings and preferences</p>
+          <h1 className="text-3xl font-bold text-gray-900">System Settings</h1>
+          <p className="text-gray-600 mt-1">Manage system-wide configuration settings</p>
+        </div>
+        <button
+          onClick={() => {
+            reset();
+            setEditingSetting(null);
+            setIsModalOpen(true);
+          }}
+          className="px-6 py-3 bg-gradient-zfit text-white rounded-xl font-semibold shadow-md hover:shadow-lg transition-all hover:scale-105"
+        >
+          + Add Setting
+        </button>
       </div>
 
       {/* Error Message */}
@@ -191,117 +194,193 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Profile Information */}
-      {currentAdmin && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-gray-900">Profile Information</h2>
-            {!isEditing && (
-              <button
-                onClick={handleEditProfile}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-all"
-              >
-                Edit Profile
-              </button>
-            )}
+      {/* Category Filter */}
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+        <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Category</label>
+        <select
+          value={selectedCategory}
+          onChange={(e) => {
+            setSelectedCategory(e.target.value);
+            hasFetchedRef.current = false;
+          }}
+          className="w-full md:w-64 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#6BBD45] focus:border-transparent"
+        >
+          <option value="all">All Categories</option>
+          {categories.map((cat) => (
+            <option key={cat} value={cat}>
+              {cat}
+            </option>
+          ))}
+        </select>
           </div>
 
-          {isEditing ? (
-            <form onSubmit={handleSubmit(onSubmitProfile)} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Avatar Preview and URL */}
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Avatar</label>
-                  <div className="flex items-center space-x-4">
-                    {watch("avatarUrl") ? (
-                      <img
-                        src={watch("avatarUrl")}
-                        alt="Avatar preview"
-                        className="w-20 h-20 rounded-full object-cover border-2 border-gray-200"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = "none";
-                        }}
-                      />
-                    ) : (
-                      <div className="w-20 h-20 rounded-full bg-gray-200 flex items-center justify-center text-gray-400">
-                        No Image
+      {/* Settings List */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        {loading ? (
+          <div className="p-8 text-center text-gray-500">Loading settings...</div>
+        ) : settings.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">No settings found</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Key
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Value
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Type
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Category
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Description
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {settings.map((setting) => (
+                  <tr key={setting.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900 font-mono">{setting.key}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-gray-900 max-w-xs truncate">
+                        {setting.value || <span className="text-gray-400 italic">No value</span>}
                       </div>
-                    )}
-                    <div className="flex-1">
-                      <input
-                        type="url"
-                        {...register("avatarUrl")}
-                        placeholder="https://example.com/avatar.jpg"
-                        className="w-full rounded-lg border-2 px-4 py-3 text-sm text-gray-900 border-gray-200 focus:border-[#6BBD45] focus:ring-[#6BBD45]/20 focus:outline-none focus:ring-4 transition-all"
-                      />
-                      {errors.avatarUrl && (
-                        <p className="text-red-500 text-sm mt-1">{errors.avatarUrl.message}</p>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                        {setting.type}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-500">{setting.category || "—"}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-gray-500 max-w-xs truncate">
+                        {setting.description || "—"}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="flex items-center justify-end space-x-2">
+                        <button
+                          onClick={() => handleEdit(setting)}
+                          className="text-blue-600 hover:text-blue-900"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirm({ isOpen: true, setting })}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
                       )}
                     </div>
-                  </div>
-                </div>
 
-                {/* Display Name */}
+      {/* Create/Edit Modal */}
+      {isModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm p-4"
+          onClick={() => {
+            setIsModalOpen(false);
+            reset();
+            setEditingSetting(null);
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-2xl font-bold text-gray-900">
+                {isEditing ? "Edit Setting" : "Create Setting"}
+              </h2>
+                  </div>
+            <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-4">
+              {!isEditing && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Display Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Key *</label>
                   <input
+                    {...register("key")}
                     type="text"
-                    {...register("displayName")}
-                    placeholder="Enter display name"
-                    className="w-full rounded-lg border-2 px-4 py-3 text-sm text-gray-900 border-gray-200 focus:border-[#6BBD45] focus:ring-[#6BBD45]/20 focus:outline-none focus:ring-4 transition-all"
+                    className={`w-full rounded-lg border-2 px-4 py-3 text-sm font-mono text-gray-900 transition-all ${
+                      errors.key
+                        ? "border-red-300 focus:border-red-500 focus:ring-red-500"
+                        : "border-gray-200 focus:border-[#6BBD45] focus:ring-[#6BBD45]/20"
+                    } focus:outline-none focus:ring-4`}
+                    placeholder="e.g., app_name"
                   />
-                  {errors.displayName && (
-                    <p className="text-red-500 text-sm mt-1">{errors.displayName.message}</p>
-                  )}
+                  {errors.key && <p className="text-red-500 text-sm mt-1">{errors.key.message}</p>}
+                </div>
+              )}
+
+                <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Value</label>
+                <textarea
+                  {...register("value")}
+                  rows={3}
+                  className="w-full rounded-lg border-2 px-4 py-3 text-sm text-gray-900 border-gray-200 focus:border-[#6BBD45] focus:ring-[#6BBD45]/20 focus:outline-none focus:ring-4 transition-all"
+                  placeholder="Enter setting value"
+                />
                 </div>
 
-                {/* Email (Read-only) */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                  <div className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-500">
-                    {currentAdmin.email} (cannot be changed)
-                  </div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Type *</label>
+                <select
+                  {...register("type")}
+                  className="w-full rounded-lg border-2 px-4 py-3 text-sm text-gray-900 border-gray-200 focus:border-[#6BBD45] focus:ring-[#6BBD45]/20 focus:outline-none focus:ring-4 transition-all"
+                >
+                  <option value="string">String</option>
+                  <option value="number">Number</option>
+                  <option value="boolean">Boolean</option>
+                  <option value="json">JSON</option>
+                </select>
                 </div>
 
-                {/* Role (Read-only) */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
-                  <div className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-500">
-                    {currentAdmin.adminRole.name} (cannot be changed)
-                  </div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                <input
+                  {...register("category")}
+                  type="text"
+                  className="w-full rounded-lg border-2 px-4 py-3 text-sm text-gray-900 border-gray-200 focus:border-[#6BBD45] focus:ring-[#6BBD45]/20 focus:outline-none focus:ring-4 transition-all"
+                  placeholder="e.g., General, Payment, Email"
+                />
                 </div>
 
-                {/* Status (Read-only) */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
-                  <div className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg">
-                    <span
-                      className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                        currentAdmin.isActive
-                          ? "bg-green-100 text-green-800"
-                          : "bg-red-100 text-red-800"
-                      }`}
-                    >
-                      {currentAdmin.isActive ? "Active" : "Inactive"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Last Login (Read-only) */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Last Login</label>
-                  <div className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-500">
-                    {currentAdmin.lastLoginAt
-                      ? new Date(currentAdmin.lastLoginAt).toLocaleString()
-                      : "Never"}
-                  </div>
-                </div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                <textarea
+                  {...register("description")}
+                  rows={2}
+                  className="w-full rounded-lg border-2 px-4 py-3 text-sm text-gray-900 border-gray-200 focus:border-[#6BBD45] focus:ring-[#6BBD45]/20 focus:outline-none focus:ring-4 transition-all"
+                  placeholder="Describe what this setting does"
+                />
               </div>
 
-              <div className="flex justify-end space-x-4 pt-4 border-t border-gray-200">
+              <div className="flex justify-end space-x-4 pt-4">
                 <button
                   type="button"
-                  onClick={handleCancelEdit}
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    reset();
+                    setEditingSetting(null);
+                  }}
                   className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
@@ -311,227 +390,48 @@ export default function SettingsPage() {
                   disabled={isSubmitting}
                   className="px-6 py-2 bg-gradient-zfit text-white rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50"
                 >
-                  {isSubmitting ? "Saving..." : "Save Changes"}
+                  {isSubmitting ? "Saving..." : isEditing ? "Update" : "Create"}
                 </button>
               </div>
             </form>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Avatar Display */}
-              {currentAdmin.avatarUrl && (
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Avatar</label>
-                  <img
-                    src={currentAdmin.avatarUrl}
-                    alt="Profile avatar"
-                    className="w-20 h-20 rounded-full object-cover border-2 border-gray-200"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = "none";
-                    }}
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                <div className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900">
-                  {currentAdmin.email}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Display Name</label>
-                <div className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900">
-                  {currentAdmin.displayName || "Not set"}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
-                <div className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900">
-                  {currentAdmin.adminRole.name}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
-                <div className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg">
-                  <span
-                    className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                      currentAdmin.isActive
-                        ? "bg-green-100 text-green-800"
-                        : "bg-red-100 text-red-800"
-                    }`}
-                  >
-                    {currentAdmin.isActive ? "Active" : "Inactive"}
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Last Login</label>
-                <div className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900">
-                  {currentAdmin.lastLoginAt
-                    ? new Date(currentAdmin.lastLoginAt).toLocaleString()
-                    : "Never"}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Created At</label>
-                <div className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900">
-                  {currentAdmin.createdAt
-                    ? new Date(currentAdmin.createdAt).toLocaleString()
-                    : "N/A"}
-                </div>
-              </div>
             </div>
-          )}
         </div>
       )}
 
-      {/* Security Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-6">Security</h2>
-        
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-medium text-gray-900">Password</h3>
-            <p className="text-sm text-gray-600 mt-1">
-              Change your password to keep your account secure
-            </p>
-          </div>
-          <button
-            onClick={() => setChangePasswordModal({ isOpen: true })}
-            className="px-6 py-2 bg-gradient-zfit text-white rounded-xl font-semibold shadow-md hover:shadow-lg transition-all hover:scale-105"
-          >
-            Change Password
-          </button>
-        </div>
-      </div>
-
-      {/* Change Password Modal */}
-      {changePasswordModal.isOpen && (
-        <ChangePasswordModal
-          onClose={() => setChangePasswordModal({ isOpen: false })}
-          onChangePassword={handleChangePassword}
-        />
-      )}
-    </div>
-  );
-}
-
-// Change Password Modal Component
-function ChangePasswordModal({
-  onClose,
-  onChangePassword,
-}: {
-  onClose: () => void;
-  onChangePassword: (oldPassword: string, newPassword: string) => void;
-}) {
-  const [oldPassword, setOldPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState("");
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    if (oldPassword.length === 0) {
-      setError("Old password is required");
-      return;
-    }
-
-    if (newPassword.length < 8) {
-      setError("New password must be at least 8 characters");
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setError("New passwords do not match");
-      return;
-    }
-
-    if (oldPassword === newPassword) {
-      setError("New password must be different from old password");
-      return;
-    }
-
-    onChangePassword(oldPassword, newPassword);
-    setOldPassword("");
-    setNewPassword("");
-    setConfirmPassword("");
-    onClose();
-  };
-
-  return (
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm.isOpen && (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm p-4"
-      onClick={onClose}
+          onClick={() => setDeleteConfirm({ isOpen: false, setting: null })}
     >
       <div
         className="bg-white rounded-2xl shadow-2xl w-full max-w-md"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Change Password</h3>
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Delete Setting</h3>
           <p className="text-gray-600 mb-6">
-            Change your account password
-          </p>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Old Password</label>
-              <input
-                type="password"
-                value={oldPassword}
-                onChange={(e) => setOldPassword(e.target.value)}
-                className="w-full rounded-lg border-2 px-4 py-3 text-sm text-gray-900 border-gray-200 focus:border-[#6BBD45] focus:ring-[#6BBD45]/20 focus:outline-none focus:ring-4 transition-all"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">New Password</label>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full rounded-lg border-2 px-4 py-3 text-sm text-gray-900 border-gray-200 focus:border-[#6BBD45] focus:ring-[#6BBD45]/20 focus:outline-none focus:ring-4 transition-all"
-                required
-                minLength={8}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Confirm New Password</label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full rounded-lg border-2 px-4 py-3 text-sm text-gray-900 border-gray-200 focus:border-[#6BBD45] focus:ring-[#6BBD45]/20 focus:outline-none focus:ring-4 transition-all"
-                required
-                minLength={8}
-              />
-            </div>
-            {error && <p className="text-red-500 text-sm">{error}</p>}
-            <div className="flex justify-end space-x-4 pt-4">
+                Are you sure you want to delete the setting <strong>{deleteConfirm.setting?.key}</strong>? This action
+                cannot be undone.
+              </p>
+              <div className="flex justify-end space-x-4">
               <button
-                type="button"
-                onClick={onClose}
+                  onClick={() => setDeleteConfirm({ isOpen: false, setting: null })}
                 className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
-                type="submit"
-                className="px-4 py-2 bg-gradient-zfit text-white rounded-lg font-semibold hover:shadow-lg transition-all"
+                  onClick={handleDelete}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
               >
-                Change Password
+                  Delete
               </button>
+              </div>
             </div>
-          </form>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
-

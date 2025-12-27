@@ -191,7 +191,11 @@ export class CollectionService {
           },
           _count: {
             select: {
-              videos: true,
+              videos: {
+                where: {
+                  deletedAt: null,
+                },
+              },
             },
           },
         },

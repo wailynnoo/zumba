@@ -43,6 +43,15 @@
     "genderInvalid": "လိင် သည် အောက်ပါတစ်ခုခု ဖြစ်ရမည်: male, female, other, prefer_not_to_say",
     "avatarUrlInvalid": "မှားယွင်းသော URL format"
   },
+  "user": {
+    "profileNotFound": "အသုံးပြုသူ profile မတွေ့ရှိပါ",
+    "displayNameTooLong": "အမည်သည် ၁၀၀ လုံးထက် နည်းရမည်",
+    "invalidAvatarUrl": "မှားယွင်းသော avatar URL format",
+    "invalidAge": "အသက်သည် ၁၃ နှင့် ၁၂၀ ကြားရှိရမည်",
+    "addressTooLong": "လိပ်စာသည် ၅၀၀ လုံးထက် နည်းရမည်",
+    "invalidWeight": "ကိုယ်အလေးချိန်သည် ၂၀ နှင့် ၅၀၀ kg ကြားရှိရမည်",
+    "invalidGender": "လိင် သည် အောက်ပါတစ်ခုခု ဖြစ်ရမည်: male, female, other, prefer_not_to_say"
+  },
   "errors": {
     "notFound": "အရင်းအမြစ် မတွေ့ရှိပါ",
     "unauthorized": "အတည်ပြုခြင်း လိုအပ်ပါသည်",

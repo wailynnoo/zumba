@@ -513,8 +513,15 @@ export default function EditVideoPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const allowedTypes = ["video/mp4", "video/webm", "video/mov", "video/avi", "video/mkv"];
-    if (!allowedTypes.includes(file.type)) {
+    // Check file extension and MIME type
+    const fileExtension = file.name.toLowerCase().split('.').pop();
+    const allowedExtensions = ['mp4', 'webm', 'mov', 'avi', 'mkv'];
+    const allowedMimeTypes = ["video/mp4", "video/webm", "video/mov", "video/quicktime", "video/avi", "video/x-msvideo", "video/mkv", "video/x-matroska"];
+    
+    const isValidExtension = fileExtension && allowedExtensions.includes(fileExtension);
+    const isValidMimeType = allowedMimeTypes.includes(file.type);
+    
+    if (!isValidExtension || !isValidMimeType) {
       setError("Only MP4, WebM, MOV, AVI, and MKV videos are allowed");
       setTimeout(() => setError(""), 5000);
       return;
@@ -1012,8 +1019,15 @@ export default function EditVideoPage() {
                     const file = e.target.files?.[0];
                     if (!file) return;
 
-                    const allowedTypes = ["video/mp4", "video/webm", "video/mov", "video/avi", "video/mkv"];
-                    if (!allowedTypes.includes(file.type)) {
+                    // Check file extension and MIME type
+                    const fileExtension = file.name.toLowerCase().split('.').pop();
+                    const allowedExtensions = ['mp4', 'webm', 'mov', 'avi', 'mkv'];
+                    const allowedMimeTypes = ["video/mp4", "video/webm", "video/mov", "video/quicktime", "video/avi", "video/x-msvideo", "video/mkv", "video/x-matroska"];
+                    
+                    const isValidExtension = fileExtension && allowedExtensions.includes(fileExtension);
+                    const isValidMimeType = allowedMimeTypes.includes(file.type);
+                    
+                    if (!isValidExtension || !isValidMimeType) {
                       setError("Only MP4, WebM, MOV, AVI, and MKV videos are allowed");
                       setTimeout(() => setError(""), 5000);
                       return;

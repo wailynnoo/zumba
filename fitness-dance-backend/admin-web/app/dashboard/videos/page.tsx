@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import videoService, { Video } from "@/lib/services/videoService";
 import VideoList from "./components/VideoList";
@@ -45,9 +45,18 @@ export default function VideosPage() {
 
   // Thumbnail URLs cache (videoId -> signedUrl)
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
+  
+  // Track if reference data has been fetched to prevent duplicate requests
+  const hasFetchedRefDataRef = useRef(false);
+  const fetchingRefDataRef = useRef(false);
+  
   // Fetch categories and collections for filters
   useEffect(() => {
+    // Prevent duplicate requests - only fetch once
+    if (hasFetchedRefDataRef.current || fetchingRefDataRef.current) return;
+    
     const fetchReferenceData = async () => {
+      fetchingRefDataRef.current = true;
       try {
         const [catsResult, collectionsResult] = await Promise.all([
           categoryService.getCategories({ limit: 100 }),
@@ -55,8 +64,11 @@ export default function VideosPage() {
         ]);
         setCategories(catsResult.data.map(cat => ({ id: cat.id, name: cat.name })));
         setCollections(collectionsResult.data.map(col => ({ id: col.id, name: col.name })));
+        hasFetchedRefDataRef.current = true;
       } catch (err) {
         console.error("Error fetching reference data:", err);
+      } finally {
+        fetchingRefDataRef.current = false;
       }
     };
     fetchReferenceData();

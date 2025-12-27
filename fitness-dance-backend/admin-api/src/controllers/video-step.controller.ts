@@ -5,6 +5,7 @@ import { Request, Response } from "express";
 import { videoStepService, createVideoStepSchema, updateVideoStepSchema } from "../services/video-step.service";
 import { z } from "zod";
 import { r2StorageService } from "../services/r2-storage.service";
+import { videoValidationService } from "../services/video-validation.service";
 
 export class VideoStepController {
   /**
@@ -219,6 +220,35 @@ export class VideoStepController {
         return;
       }
 
+      // Quick validation for obviously incompatible formats
+      const quickCheck = videoValidationService.quickValidate(req.file.originalname);
+      if (!quickCheck.valid) {
+        res.status(400).json({
+          success: false,
+          message: quickCheck.error,
+          recommendation: "Please convert your video to MP4 with H.264 codec using: ffmpeg -i input -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k output.mp4",
+        });
+        return;
+      }
+
+      // Full video validation (codec check)
+      const validation = await videoValidationService.validateVideo(
+        req.file.buffer,
+        req.file.originalname
+      );
+
+      if (!validation.valid) {
+        res.status(400).json({
+          success: false,
+          message: "Video format/codec not supported",
+          errors: validation.errors,
+          warnings: validation.warnings,
+          videoInfo: validation.videoInfo,
+          recommendation: "Please convert your video to MP4 with H.264 codec using: ffmpeg -i input -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k output.mp4",
+        });
+        return;
+      }
+
       if (!r2StorageService.isConfigured()) {
         res.status(500).json({
           success: false,
@@ -265,6 +295,8 @@ export class VideoStepController {
         success: true,
         message: "Step video uploaded successfully",
         data: updatedStep,
+        videoInfo: validation.videoInfo,
+        warnings: validation.warnings.length > 0 ? validation.warnings : undefined,
       });
     } catch (error: any) {
       console.error("[Video Step Controller] Error uploading step video:", error);

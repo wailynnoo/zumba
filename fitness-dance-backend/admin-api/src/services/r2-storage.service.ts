@@ -369,35 +369,86 @@ export class R2StorageService {
       throw new Error("R2 storage is not configured");
     }
 
+    if (!fileUrl || fileUrl.trim() === "") {
+      console.warn("[R2 Storage] Empty file URL provided for deletion");
+      return;
+    }
+
     try {
       // Extract key from URL
-      let key = fileUrl;
-      if (fileUrl.includes("/")) {
-        // Extract key from URL
-        const urlParts = fileUrl.split("/");
-        const keyIndex = urlParts.findIndex(part => 
-          part === "videos" || part === "thumbnails" || part === "audio" || part === "categories"
-        );
-        if (keyIndex >= 0) {
-          key = urlParts.slice(keyIndex).join("/");
-        } else {
-          // Try to extract from end
-          const match = fileUrl.match(/(videos|thumbnails|audio|categories)\/.+$/);
+      let key = fileUrl.trim();
+      
+      // If it's already a key (starts with videos/, thumbnails/, audio/, categories/, collections/)
+      // and doesn't contain http:// or https://, use it as-is
+      if (!key.includes("http://") && !key.includes("https://")) {
+        // It's likely already a key
+        console.log(`[R2 Storage] Using provided key as-is: ${key}`);
+      } else {
+        // It's a URL, extract the key
+        console.log(`[R2 Storage] Extracting key from URL: ${key}`);
+        
+        // Try to find the key starting from common prefixes
+        const prefixes = ["videos/", "thumbnails/", "audio/", "categories/", "collections/"];
+        let foundPrefix = false;
+        
+        for (const prefix of prefixes) {
+          const prefixIndex = key.indexOf(prefix);
+          if (prefixIndex >= 0) {
+            key = key.substring(prefixIndex);
+            foundPrefix = true;
+            console.log(`[R2 Storage] Extracted key using prefix '${prefix}': ${key}`);
+            break;
+          }
+        }
+        
+        if (!foundPrefix) {
+          // Try regex match as fallback
+          const match = key.match(/(videos|thumbnails|audio|categories|collections)\/.+$/);
           if (match) {
             key = match[0];
+            console.log(`[R2 Storage] Extracted key using regex: ${key}`);
+          } else {
+            // Last resort: try to extract from the last part of the URL
+            const urlParts = key.split("/");
+            const lastPart = urlParts[urlParts.length - 1];
+            if (lastPart && lastPart.includes(".")) {
+              // Might be a filename, try to find the directory
+              const videosIndex = urlParts.findIndex(p => p === "videos" || p === "thumbnails" || p === "audio" || p === "categories" || p === "collections");
+              if (videosIndex >= 0) {
+                key = urlParts.slice(videosIndex).join("/");
+                console.log(`[R2 Storage] Extracted key from URL parts: ${key}`);
+              } else {
+                console.warn(`[R2 Storage] Could not extract key from URL, using last part: ${lastPart}`);
+                key = lastPart;
+              }
+            }
           }
         }
       }
 
+      console.log(`[R2 Storage] Deleting file from R2 with key: ${key}`);
       const command = new DeleteObjectCommand({
         Bucket: this.bucketName,
         Key: key,
       });
 
       await this.s3Client.send(command);
+      console.log(`[R2 Storage] Successfully deleted file from R2: ${key}`);
     } catch (error: any) {
-      console.error("Error deleting file from R2:", error);
-      // Don't throw - file might not exist
+      // Check if it's a "NoSuchKey" error (file doesn't exist)
+      if (error.name === "NoSuchKey" || error.Code === "NoSuchKey") {
+        console.warn(`[R2 Storage] File not found in R2 (may have been already deleted): ${fileUrl}`);
+        return;
+      }
+      
+      console.error(`[R2 Storage] Error deleting file from R2:`, {
+        fileUrl,
+        error: error.message,
+        code: error.Code,
+        name: error.name,
+      });
+      // Re-throw the error so callers can handle it
+      throw error;
     }
   }
 

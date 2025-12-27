@@ -68,6 +68,8 @@ export default function CollectionsPage() {
   
   // Signed URLs cache for R2 images
   const [imageUrlCache, setImageUrlCache] = useState<Record<string, string>>({});
+  // Track which collection IDs we're currently fetching to prevent duplicate requests
+  const fetchingRef = useRef<Set<string>>(new Set());
 
   // React Hook Form
   const {
@@ -91,8 +93,6 @@ export default function CollectionsPage() {
     },
   });
 
-  // Watch name to auto-generate slug
-  const nameValue = watch("name");
   const isEditing = !!editingCollection;
 
   // Debounce search input
@@ -104,19 +104,6 @@ export default function CollectionsPage() {
 
     return () => clearTimeout(timer);
   }, [searchTerm]);
-
-  // Auto-generate slug from name (only when creating, not editing)
-  useEffect(() => {
-    if (!isEditing && nameValue) {
-      const slug = nameValue
-        .toLowerCase()
-        .trim()
-        .replace(/[^\w\s-]/g, "")
-        .replace(/[\s_-]+/g, "-")
-        .replace(/^-+|-+$/g, "");
-      setValue("slug", slug);
-    }
-  }, [nameValue, isEditing, setValue]);
 
   // Fetch categories for dropdown
   useEffect(() => {
@@ -165,48 +152,92 @@ export default function CollectionsPage() {
     fetchCollections();
   }, [fetchCollections]);
 
-  // Helper function to get thumbnail URL (handles R2 keys and legacy URLs)
-  const getThumbnailUrl = useCallback(async (collection: Collection): Promise<string | null> => {
-    if (!collection.thumbnailUrl) return null;
-    
-    // If it's already a full URL (signed URL or legacy URL), return as is
-    if (collection.thumbnailUrl.startsWith("http://") || collection.thumbnailUrl.startsWith("https://")) {
-      return collection.thumbnailUrl;
-    }
-    
-    // If it's an R2 key (starts with collections/ or thumbnails/), fetch signed URL
-    if (collection.thumbnailUrl.startsWith("collections/") || collection.thumbnailUrl.startsWith("thumbnails/")) {
-      // Check cache first
-      if (imageUrlCache[collection.id]) {
-        return imageUrlCache[collection.id];
-      }
-      
+  // Fetch all collection thumbnail URLs in batch after collections are loaded
+  useEffect(() => {
+    if (loading || collections.length === 0) return;
+
+    const fetchAllImageUrls = async () => {
+      // Filter collections that need signed URLs (R2 keys)
+      // Check both cache and fetching ref to avoid duplicate requests
+      const collectionsNeedingUrls = collections.filter(
+        (col) =>
+          col.thumbnailUrl &&
+          (col.thumbnailUrl.startsWith("collections/") || col.thumbnailUrl.startsWith("thumbnails/")) &&
+          !imageUrlCache[col.id] &&
+          !fetchingRef.current.has(col.id) &&
+          !col.thumbnailUrl.startsWith("http://") &&
+          !col.thumbnailUrl.startsWith("https://")
+      );
+
+      if (collectionsNeedingUrls.length === 0) return;
+
+      // Mark all as being fetched
+      collectionsNeedingUrls.forEach((col) => {
+        fetchingRef.current.add(col.id);
+      });
+
       try {
-        const signedUrl = await collectionService.getThumbnailUrl(collection.id);
-        setImageUrlCache((prev) => ({ ...prev, [collection.id]: signedUrl }));
-        return signedUrl;
+        // Fetch all thumbnail URLs in parallel
+        const urlPromises = collectionsNeedingUrls.map(async (col) => {
+          try {
+            const signedUrl = await collectionService.getThumbnailUrl(col.id);
+            return { collectionId: col.id, url: signedUrl };
+          } catch (error) {
+            console.error(`Error fetching signed URL for collection ${col.id}:`, error);
+            return null;
+          }
+        });
+
+        const results = await Promise.all(urlPromises);
+        
+        // Update cache with all fetched URLs at once
+        const newCacheEntries: Record<string, string> = {};
+        results.forEach((result) => {
+          if (result) {
+            newCacheEntries[result.collectionId] = result.url;
+            // Remove from fetching set
+            fetchingRef.current.delete(result.collectionId);
+          }
+        });
+
+        if (Object.keys(newCacheEntries).length > 0) {
+          setImageUrlCache((prev) => ({ ...prev, ...newCacheEntries }));
+        }
       } catch (error) {
-        console.error("Error fetching signed URL for collection thumbnail:", error);
-        return null;
+        // On error, remove from fetching set
+        collectionsNeedingUrls.forEach((col) => {
+          fetchingRef.current.delete(col.id);
+        });
       }
-    }
-    
-    return collection.thumbnailUrl;
-  }, [imageUrlCache]);
+    };
+
+    fetchAllImageUrls();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collections.map(c => `${c.id}:${c.thumbnailUrl || ''}`).join(','), loading]); // Re-fetch when collection IDs or thumbnailUrls change
   
   // Component to display collection thumbnail with R2 support
   const CollectionThumbnail = ({ collection }: { collection: Collection }) => {
-    const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
+    // Get image URL from cache or construct it directly
+    const getDisplayUrl = (): string | null => {
+      if (!collection.thumbnailUrl) return null;
+      
+      // If it's already a full URL (signed URL or legacy URL), return as is
+      if (collection.thumbnailUrl.startsWith("http://") || collection.thumbnailUrl.startsWith("https://")) {
+        return collection.thumbnailUrl;
+      }
+      
+      // If it's an R2 key, check cache first
+      if (collection.thumbnailUrl.startsWith("collections/") || collection.thumbnailUrl.startsWith("thumbnails/")) {
+        return imageUrlCache[collection.id] || null;
+      }
+      
+      // Legacy: return as is for other paths
+      return collection.thumbnailUrl;
+    };
+
+    const displayUrl = getDisplayUrl();
     
-    useEffect(() => {
-      getThumbnailUrl(collection).then((url) => {
-        setThumbnailUrl(url);
-        setLoading(false);
-      });
-    }, [collection, getThumbnailUrl]);
-    
-    if (loading || !thumbnailUrl) {
+    if (!displayUrl) {
       return (
         <div className="h-16 w-28 rounded-lg bg-gray-200 flex items-center justify-center">
           <svg className="h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -218,7 +249,7 @@ export default function CollectionsPage() {
     
     return (
       <img
-        src={thumbnailUrl}
+        src={displayUrl}
         alt={collection.name}
         className="h-16 w-28 rounded-lg object-cover"
         onError={(e) => {
@@ -233,7 +264,7 @@ export default function CollectionsPage() {
       const payload = {
         categoryId: data.categoryId,
         name: data.name.trim(),
-        slug: data.slug?.trim() || undefined,
+        // slug is auto-generated on backend, not needed from frontend
         description: data.description?.trim() || undefined,
         thumbnailUrl: data.thumbnailUrl?.trim() || undefined,
         isFeatured: data.isFeatured,
@@ -298,6 +329,8 @@ export default function CollectionsPage() {
       setEditingCollection(null);
       setSelectedImage(null);
       setImagePreview(null);
+      // Clear cache and refresh collections to show updated images
+      setImageUrlCache({});
       await fetchCollections();
     } catch (err: any) {
       const errorMessage = err.response?.data?.message || "Failed to save collection";
@@ -316,7 +349,7 @@ export default function CollectionsPage() {
     reset({
       categoryId: String(collectionData.categoryId || ""),
       name: String(collectionData.name || ""),
-      slug: String(collectionData.slug || ""),
+      slug: "", // Slug is auto-generated, not needed in form
       description: String(collectionData.description || ""),
       thumbnailUrl: String(collectionData.thumbnailUrl || ""),
       isFeatured: Boolean(collectionData.isFeatured ?? false),
@@ -381,15 +414,6 @@ export default function CollectionsPage() {
     }
   };
 
-  const handleToggleFeatured = async (id: string) => {
-    try {
-      await collectionService.toggleFeaturedStatus(id);
-      await fetchCollections();
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to update featured status");
-      setTimeout(() => setError(""), 5000);
-    }
-  };
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -612,14 +636,13 @@ export default function CollectionsPage() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Videos</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Featured</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {collections.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                     No collections found
                   </td>
                 </tr>
@@ -651,18 +674,6 @@ export default function CollectionsPage() {
                         }`}
                       >
                         {collection.isActive ? "Active" : "Inactive"}
-                      </button>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <button
-                        onClick={() => handleToggleFeatured(collection.id)}
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          collection.isFeatured
-                            ? "bg-yellow-100 text-yellow-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {collection.isFeatured ? "Featured" : "Not Featured"}
                       </button>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -786,29 +797,7 @@ export default function CollectionsPage() {
                   )}
                 </div>
 
-                {/* Slug */}
-                <div>
-                  <label htmlFor="slug" className="block text-sm font-medium text-gray-700 mb-2">
-                    Slug (auto-generated)
-                  </label>
-                  <input
-                    type="text"
-                    id="slug"
-                    {...register("slug")}
-                    className={`w-full rounded-lg border-2 px-4 py-3 text-sm font-mono text-gray-900 transition-all ${
-                      errors.slug
-                        ? "border-red-300 focus:border-red-500 focus:ring-red-500"
-                        : "border-gray-200 focus:border-[#6BBD45] focus:ring-[#6BBD45]/20"
-                    } focus:outline-none focus:ring-4`}
-                    placeholder="e.g., summer-collection"
-                  />
-                  {errors.slug && (
-                    <p className="mt-1 text-sm text-red-600">{errors.slug.message}</p>
-                  )}
-                  <p className="mt-1 text-xs text-gray-500">
-                    Auto-generated from name
-                  </p>
-                </div>
+                {/* Slug is auto-generated on backend, no need to show in form */}
 
                 {/* Description */}
                 <div>
@@ -895,18 +884,6 @@ export default function CollectionsPage() {
                       </label>
                     </div>
                   )}
-                </div>
-
-                {/* Featured */}
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    {...register("isFeatured")}
-                    className="h-4 w-4 text-[#6BBD45] focus:ring-[#6BBD45] border-gray-300 rounded"
-                  />
-                  <label className="ml-2 block text-sm text-gray-700">
-                    Featured Collection
-                  </label>
                 </div>
 
                 {/* Active */}

@@ -17,7 +17,7 @@ export interface Category {
 
 export interface CreateCategoryData {
   name: string;
-  slug: string;
+  slug?: string; // Optional - auto-generated on backend if not provided
   description?: string;
   iconUrl?: string;
   isActive?: boolean;

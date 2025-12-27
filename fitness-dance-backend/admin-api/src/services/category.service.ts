@@ -49,7 +49,7 @@ function normalizeImageUrl(urlOrPath: string | null | undefined): string | null 
 // Validation schemas
 export const createCategorySchema = z.object({
   name: z.string().min(1).max(100),
-  slug: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/, "Slug must contain only lowercase letters, numbers, and hyphens"),
+  slug: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/, "Slug must contain only lowercase letters, numbers, and hyphens").optional(),
   description: z.string().optional(),
   iconUrl: z.string().url().optional().or(z.literal("")),
   isActive: z.boolean().default(true),
@@ -73,42 +73,65 @@ export class CategoryService {
    * Create a new category
    */
   async createCategory(data: z.infer<typeof createCategorySchema>) {
-    // Check if slug or name already exists (including soft-deleted)
-    // First check for active categories
-    const activeExisting = await prisma.videoCategory.findFirst({
+    // Check if name already exists first (name is the primary identifier)
+    const existingByName = await prisma.videoCategory.findFirst({
       where: {
-        OR: [
-          { slug: data.slug },
-          { name: data.name },
-        ],
+        name: data.name,
         deletedAt: null,
       },
     });
 
-    if (activeExisting) {
-      throw new Error(activeExisting.slug === data.slug 
-        ? "Category with this slug already exists" 
-        : "Category with this name already exists");
+    if (existingByName) {
+      throw new Error("Category with this name already exists");
     }
 
-    // Check for soft-deleted categories with the same name/slug
+    // Generate slug if not provided, and make it unique if needed
+    let slug = data.slug || generateSlug(data.name);
+    
+    // If slug was auto-generated, ensure it's unique
+    if (!data.slug) {
+      let uniqueSlug = slug;
+      let counter = 1;
+      while (await prisma.videoCategory.findFirst({
+        where: {
+          slug: uniqueSlug,
+          deletedAt: null,
+        },
+      })) {
+        uniqueSlug = `${slug}-${counter}`;
+        counter++;
+      }
+      slug = uniqueSlug;
+    } else {
+      // If slug was provided, check if it conflicts
+      const existingBySlug = await prisma.videoCategory.findFirst({
+        where: {
+          slug: slug,
+          deletedAt: null,
+        },
+      });
+
+      if (existingBySlug) {
+        throw new Error("Category with this slug already exists");
+      }
+    }
+
+    // Check for soft-deleted categories with the same name (prioritize name over slug)
     const softDeleted = await prisma.videoCategory.findFirst({
       where: {
-        OR: [
-          { slug: data.slug },
-          { name: data.name },
-        ],
+        name: data.name,
         deletedAt: { not: null },
       },
     });
 
     if (softDeleted) {
       // Restore the soft-deleted category with new data
+      // Use the unique slug we generated above
       const restored = await prisma.videoCategory.update({
         where: { id: softDeleted.id },
         data: {
           name: data.name,
-          slug: data.slug,
+          slug: slug,
           description: data.description,
           iconUrl: normalizeImageUrl(data.iconUrl) || null,
           isActive: data.isActive,
@@ -123,7 +146,7 @@ export class CategoryService {
     const category = await prisma.videoCategory.create({
       data: {
         name: data.name,
-        slug: data.slug,
+        slug: slug,
         description: data.description,
         iconUrl: normalizeImageUrl(data.iconUrl) || null,
         isActive: data.isActive,
@@ -199,9 +222,21 @@ export class CategoryService {
       include: {
         _count: {
           select: {
-            videos: true,
-            subcategories: true,
-            collections: true,
+            videos: {
+              where: {
+                deletedAt: null,
+              },
+            },
+            subcategories: {
+              where: {
+                deletedAt: null,
+              },
+            },
+            collections: {
+              where: {
+                deletedAt: null,
+              },
+            },
           },
         },
       },
@@ -226,9 +261,21 @@ export class CategoryService {
       include: {
         _count: {
           select: {
-            videos: true,
-            subcategories: true,
-            collections: true,
+            videos: {
+              where: {
+                deletedAt: null,
+              },
+            },
+            subcategories: {
+              where: {
+                deletedAt: null,
+              },
+            },
+            collections: {
+              where: {
+                deletedAt: null,
+              },
+            },
           },
         },
       },
@@ -257,25 +304,52 @@ export class CategoryService {
       throw new Error("Category not found");
     }
 
-    // Check if slug/name conflicts with another category
-    if (data.slug || data.name) {
-      const conflict = await prisma.videoCategory.findFirst({
+    // Check if name conflicts with another category (name is primary identifier)
+    if (data.name) {
+      const nameConflict = await prisma.videoCategory.findFirst({
         where: {
           id: { not: id },
-          OR: [
-            data.slug ? { slug: data.slug } : {},
-            data.name ? { name: data.name } : {},
-          ],
+          name: data.name,
           deletedAt: null,
         },
       });
 
-      if (conflict) {
-        throw new Error(
-          conflict.slug === data.slug
-            ? "Category with this slug already exists"
-            : "Category with this name already exists"
-        );
+      if (nameConflict) {
+        throw new Error("Category with this name already exists");
+      }
+    }
+
+    // Generate slug if name is provided but slug is not
+    let slug = data.slug;
+    if (data.name && !data.slug) {
+      slug = generateSlug(data.name);
+      
+      // Make slug unique if it was auto-generated
+      let uniqueSlug = slug;
+      let counter = 1;
+      while (await prisma.videoCategory.findFirst({
+        where: {
+          id: { not: id },
+          slug: uniqueSlug,
+          deletedAt: null,
+        },
+      })) {
+        uniqueSlug = `${slug}-${counter}`;
+        counter++;
+      }
+      slug = uniqueSlug;
+    } else if (data.slug) {
+      // If slug was provided, check if it conflicts
+      const slugConflict = await prisma.videoCategory.findFirst({
+        where: {
+          id: { not: id },
+          slug: data.slug,
+          deletedAt: null,
+        },
+      });
+
+      if (slugConflict) {
+        throw new Error("Category with this slug already exists");
       }
     }
 
@@ -283,7 +357,7 @@ export class CategoryService {
       where: { id },
       data: {
         ...(data.name && { name: data.name }),
-        ...(data.slug && { slug: data.slug }),
+        ...(slug && { slug: slug }),
         ...(data.description !== undefined && { description: data.description }),
         ...(data.iconUrl !== undefined && { iconUrl: normalizeImageUrl(data.iconUrl) || null }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),

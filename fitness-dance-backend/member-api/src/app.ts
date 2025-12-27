@@ -71,10 +71,14 @@ import authRoutes from "./routes/auth.routes";
 import categoryRoutes from "./routes/category.routes";
 import videoRoutes from "./routes/video.routes";
 import collectionRoutes from "./routes/collection.routes";
+import playlistRoutes from "./routes/playlist.routes";
+import userRoutes from "./routes/user.routes";
 app.use("/api/auth", authRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/videos", videoRoutes);
 app.use("/api/collections", collectionRoutes);
+app.use("/api/user/playlists", playlistRoutes);
+app.use("/api/user", userRoutes);
 
 // Root route
 app.get("/", (_req: Request, res: Response) => {
@@ -86,6 +90,8 @@ app.get("/", (_req: Request, res: Response) => {
       auth: "/api/auth",
       categories: "/api/categories",
       videos: "/api/videos",
+      collections: "/api/collections",
+      playlists: "/api/user/playlists",
     },
   });
 });

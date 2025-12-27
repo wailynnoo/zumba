@@ -3,6 +3,7 @@
 
 import prisma from "../config/database";
 import { z } from "zod";
+import { r2StorageService } from "./r2-storage.service";
 
 // Validation schemas
 export const createVideoStepSchema = z.object({
@@ -167,10 +168,35 @@ export class VideoStepService {
       throw new Error("Video step not found");
     }
 
+    // Delete video file from R2 before deleting database record
+    if (step.cloudflareVideoId) {
+      try {
+        console.log(`[Video Step Service] Deleting tutorial video from R2: ${step.cloudflareVideoId}`);
+        await r2StorageService.deleteFile(step.cloudflareVideoId);
+        console.log(`[Video Step Service] Successfully deleted tutorial video from R2`);
+      } catch (error) {
+        console.error(`[Video Step Service] Error deleting tutorial video from R2:`, error);
+        // Continue with database deletion even if R2 deletion fails
+      }
+    }
+    
+    // Also try videoUrl if it's different from cloudflareVideoId
+    if (step.videoUrl && step.videoUrl !== step.cloudflareVideoId) {
+      try {
+        console.log(`[Video Step Service] Deleting tutorial video URL from R2: ${step.videoUrl}`);
+        await r2StorageService.deleteFile(step.videoUrl);
+        console.log(`[Video Step Service] Successfully deleted tutorial video URL from R2`);
+      } catch (error) {
+        console.error(`[Video Step Service] Error deleting tutorial video URL from R2:`, error);
+      }
+    }
+
+    // Delete database record
     await prisma.videoStep.delete({
       where: { id },
     });
 
+    console.log(`[Video Step Service] Deleted video step from database: ${id}`);
     return { success: true };
   }
 

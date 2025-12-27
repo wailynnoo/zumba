@@ -165,9 +165,21 @@ export async function checkCategoryRelationships(
     include: {
       _count: {
         select: {
-          videos: true,
-          subcategories: true,
-          collections: true,
+          videos: {
+            where: {
+              deletedAt: null,
+            },
+          },
+          subcategories: {
+            where: {
+              deletedAt: null,
+            },
+          },
+          collections: {
+            where: {
+              deletedAt: null,
+            },
+          },
         },
       },
     },

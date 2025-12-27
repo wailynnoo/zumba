@@ -4,6 +4,7 @@
 import prisma from "../config/database";
 import { z } from "zod";
 import { r2StorageService } from "./r2-storage.service";
+import { videoStepService } from "./video-step.service";
 
 // Validation schemas
 export const createVideoSchema = z.object({
@@ -275,26 +276,81 @@ export class VideoService {
 
     // Delete files from R2 if they exist
     if (video.cloudflareVideoId) {
-      // Note: cloudflareVideoId might be a URL or ID, handle accordingly
       try {
+        console.log(`[Video Service] Attempting to delete main video file from R2: ${video.cloudflareVideoId}`);
         await r2StorageService.deleteFile(video.cloudflareVideoId);
-      } catch (error) {
-        console.error("Error deleting video file from R2:", error);
+        console.log(`[Video Service] Successfully deleted main video file from R2`);
+      } catch (error: any) {
+        console.error(`[Video Service] Error deleting video file from R2:`, {
+          cloudflareVideoId: video.cloudflareVideoId,
+          error: error.message,
+        });
+        // Continue with deletion even if file deletion fails
       }
     }
     if (video.thumbnailUrl) {
       try {
+        console.log(`[Video Service] Attempting to delete thumbnail from R2: ${video.thumbnailUrl}`);
         await r2StorageService.deleteFile(video.thumbnailUrl);
-      } catch (error) {
-        console.error("Error deleting thumbnail from R2:", error);
+        console.log(`[Video Service] Successfully deleted thumbnail from R2`);
+      } catch (error: any) {
+        console.error(`[Video Service] Error deleting thumbnail from R2:`, {
+          thumbnailUrl: video.thumbnailUrl,
+          error: error.message,
+        });
       }
     }
     if (video.audioUrl) {
       try {
+        console.log(`[Video Service] Attempting to delete audio file from R2: ${video.audioUrl}`);
         await r2StorageService.deleteFile(video.audioUrl);
-      } catch (error) {
-        console.error("Error deleting audio file from R2:", error);
+        console.log(`[Video Service] Successfully deleted audio file from R2`);
+      } catch (error: any) {
+        console.error(`[Video Service] Error deleting audio file from R2:`, {
+          audioUrl: video.audioUrl,
+          error: error.message,
+        });
       }
+    }
+
+    // Delete tutorial video steps and their files from R2
+    try {
+      const steps = await videoStepService.getVideoSteps(id);
+      
+      console.log(`[Video Service] Found ${steps.length} tutorial video step(s) to delete`);
+      
+      // Delete each step's video file from R2
+      for (const step of steps) {
+        if (step.cloudflareVideoId) {
+          try {
+            await r2StorageService.deleteFile(step.cloudflareVideoId);
+            console.log(`[Video Service] Deleted tutorial step video from R2: ${step.cloudflareVideoId}`);
+          } catch (error) {
+            console.error(`[Video Service] Error deleting tutorial step video from R2 (${step.id}):`, error);
+          }
+        }
+        
+        // Also try videoUrl if it's different from cloudflareVideoId
+        if (step.videoUrl && step.videoUrl !== step.cloudflareVideoId) {
+          try {
+            await r2StorageService.deleteFile(step.videoUrl);
+            console.log(`[Video Service] Deleted tutorial step video URL from R2: ${step.videoUrl}`);
+          } catch (error) {
+            console.error(`[Video Service] Error deleting tutorial step video URL from R2 (${step.id}):`, error);
+          }
+        }
+      }
+      
+      // Delete all video steps from database
+      if (steps.length > 0) {
+        await prisma.videoStep.deleteMany({
+          where: { videoId: id },
+        });
+        console.log(`[Video Service] Deleted ${steps.length} tutorial video step(s) from database`);
+      }
+    } catch (error) {
+      console.error("[Video Service] Error deleting tutorial video steps:", error);
+      // Don't throw - continue with video deletion even if step deletion fails
     }
 
     return { success: true };

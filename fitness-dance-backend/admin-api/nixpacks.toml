@@ -1,0 +1,16 @@
+# Nixpacks configuration for Railway deployment
+# This file tells Railway to install additional packages
+
+[phases.setup]
+aptPkgs = ["ffmpeg"]
+nixPkgs = ["ffmpeg"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm start"
+

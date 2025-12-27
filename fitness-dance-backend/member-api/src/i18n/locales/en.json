@@ -43,6 +43,15 @@
     "genderInvalid": "Gender must be one of: male, female, other, prefer_not_to_say",
     "avatarUrlInvalid": "Invalid URL format"
   },
+  "user": {
+    "profileNotFound": "User profile not found",
+    "displayNameTooLong": "Display name must be less than 100 characters",
+    "invalidAvatarUrl": "Invalid avatar URL format",
+    "invalidAge": "Age must be between 13 and 120 years",
+    "addressTooLong": "Address must be less than 500 characters",
+    "invalidWeight": "Weight must be between 20 and 500 kg",
+    "invalidGender": "Gender must be one of: male, female, other, prefer_not_to_say"
+  },
   "errors": {
     "notFound": "Resource not found",
     "unauthorized": "Authentication required",
