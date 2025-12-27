@@ -19,13 +19,20 @@ COPY prisma ./prisma
 # Copy ALL admin-api files first (before npm install)
 COPY admin-api ./admin-api/
 
-# Install dependencies (skip postinstall - we'll run prisma generate manually)
+# Install dependencies
 WORKDIR /app/admin-api
-RUN npm ci --ignore-scripts
+RUN npm install --ignore-scripts
 
-# Explicitly ensure @prisma/client is available and generate
-RUN npm ls @prisma/client || npm install @prisma/client@7.1.0
-RUN npx prisma generate --schema=/app/prisma/schema.prisma
+# Force install @prisma/client and prisma CLI to ensure they're available
+RUN npm install @prisma/client@^7.1.0 prisma@^7.1.0 --save-dev
+
+# Verify both are installed
+RUN test -d node_modules/@prisma/client && echo "✅ @prisma/client found" || echo "❌ @prisma/client missing" && \
+    test -d node_modules/prisma && echo "✅ prisma CLI found" || echo "❌ prisma CLI missing" && \
+    npm ls @prisma/client prisma
+
+# Generate Prisma client (run from admin-api where node_modules exists)
+RUN ./node_modules/.bin/prisma generate --schema=/app/prisma/schema.prisma
 
 # Build TypeScript
 RUN npx tsc
