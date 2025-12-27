@@ -23,11 +23,9 @@ COPY admin-api ./admin-api/
 WORKDIR /app/admin-api
 RUN npm install || echo "Install completed with warnings"
 
-# Explicitly install @prisma/client first (as production dependency)
-RUN npm install @prisma/client@7.1.0 --save --legacy-peer-deps
-
-# Then install prisma CLI
-RUN npm install prisma@7.1.0 --save-dev --legacy-peer-deps
+# Install matching versions of both packages (must match exactly)
+RUN npm install @prisma/client@7.1.0 prisma@7.1.0 --save-exact --legacy-peer-deps && \
+    npm install prisma@7.1.0 --save-dev --save-exact --legacy-peer-deps
 
 # Debug: Check what's actually installed
 RUN echo "=== Debug: Checking installations ===" && \
@@ -46,8 +44,10 @@ RUN echo "=== Final verification ===" && \
     node --version && \
     npm --version
 
-# Generate Prisma client using direct path to ensure it finds @prisma/client
-RUN ./node_modules/.bin/prisma generate --schema=/app/prisma/schema.prisma
+# Set NODE_PATH to help Prisma find @prisma/client, then generate
+WORKDIR /app/admin-api
+ENV NODE_PATH=/app/admin-api/node_modules
+RUN NODE_PATH=/app/admin-api/node_modules ./node_modules/.bin/prisma generate --schema=/app/prisma/schema.prisma
 
 # Build TypeScript
 RUN npx tsc
