@@ -23,27 +23,22 @@ COPY admin-api ./admin-api/
 WORKDIR /app/admin-api
 RUN npm install || echo "Install completed with warnings"
 
-# Ensure @prisma/client and prisma are definitely installed (reinstall to be sure)
-RUN npm install @prisma/client@^7.1.0 prisma@^7.1.0
+# Explicitly install @prisma/client first (as production dependency)
+RUN npm install @prisma/client@7.1.0 --save --legacy-peer-deps
 
-# Verify both are installed (with proper error checking)
-RUN echo "=== Verifying installations ===" && \
-    if [ -d "node_modules/@prisma/client" ]; then \
-        echo "✅ @prisma/client directory exists"; \
-    else \
-        echo "❌ @prisma/client directory MISSING"; \
-        exit 1; \
-    fi && \
-    if [ -d "node_modules/prisma" ]; then \
-        echo "✅ prisma CLI directory exists"; \
-    else \
-        echo "❌ prisma CLI directory MISSING"; \
-        exit 1; \
-    fi && \
-    npm ls @prisma/client prisma
+# Then install prisma CLI
+RUN npm install prisma@7.1.0 --save-dev --legacy-peer-deps
 
-# Generate Prisma client using the npm script (handles path resolution)
-RUN npm run generate:prisma
+# Debug: Check what's actually installed
+RUN echo "=== Debug: Checking installations ===" && \
+    echo "node_modules/@prisma exists:" && ls -la node_modules/@prisma 2>&1 || echo "NO @prisma folder" && \
+    echo "node_modules/@prisma/client exists:" && ls -la node_modules/@prisma/client 2>&1 || echo "NO @prisma/client folder" && \
+    echo "npm ls output:" && npm ls @prisma/client 2>&1 && \
+    echo "Checking package.json:" && cat package.json | grep -A 2 prisma
+
+# Generate Prisma client directly from admin-api directory (where node_modules is)
+# This ensures Prisma can find @prisma/client
+RUN cd /app/admin-api && npx prisma generate --schema=/app/prisma/schema.prisma
 
 # Build TypeScript
 RUN npx tsc
