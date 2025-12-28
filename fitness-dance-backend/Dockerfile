@@ -44,10 +44,15 @@ RUN echo "=== Final verification ===" && \
     node --version && \
     npm --version
 
-# Set NODE_PATH to help Prisma find @prisma/client, then generate
+# Install @prisma/client in prisma directory so Prisma can find it when generating
+# Prisma resolves packages relative to schema location
+WORKDIR /app/prisma
+RUN npm init -y --silent && \
+    npm install @prisma/client@7.1.0 --save --legacy-peer-deps
+
+# Now generate from admin-api, pointing to schema
 WORKDIR /app/admin-api
-ENV NODE_PATH=/app/admin-api/node_modules
-RUN NODE_PATH=/app/admin-api/node_modules ./node_modules/.bin/prisma generate --schema=/app/prisma/schema.prisma
+RUN npx prisma generate --schema=/app/prisma/schema.prisma
 
 # Build TypeScript
 RUN npx tsc
