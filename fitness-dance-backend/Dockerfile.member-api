@@ -33,6 +33,7 @@ RUN npm init -y --silent && \
     npm install @prisma/client@7.1.0 --save --legacy-peer-deps
 
 # Now generate from member-api, pointing to schema
+# Prisma will generate to ./node_modules/.prisma/client (default location)
 WORKDIR /app/member-api
 RUN npx prisma generate --schema=/app/prisma/schema.prisma
 

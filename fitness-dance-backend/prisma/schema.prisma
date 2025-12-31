@@ -6,7 +6,9 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../admin-api/node_modules/.prisma/client"
+  // Output is relative to where prisma generate is run from
+  // For admin-api: run from admin-api/ -> outputs to admin-api/node_modules/.prisma/client
+  // For member-api: run from member-api/ -> outputs to member-api/node_modules/.prisma/client
 }
 
 datasource db {
