@@ -85,12 +85,22 @@ export class PlaylistService {
           thumbnailUrl = await getFullImageUrl(playlist.items[0].video.thumbnailUrl);
         }
 
+        // Count only non-deleted videos
+        const videoCount = await prisma.playlistItem.count({
+          where: {
+            playlistId: playlist.id,
+            video: {
+              deletedAt: null,
+            },
+          },
+        });
+
         return {
           id: playlist.id,
           name: playlist.name,
           description: playlist.description,
           thumbnailUrl,
-          videoCount: playlist._count.items,
+          videoCount,
           createdAt: playlist.createdAt,
           updatedAt: playlist.updatedAt,
         };
@@ -193,12 +203,22 @@ export class PlaylistService {
       thumbnailUrl = videos[0].thumbnailUrl;
     }
 
+    // Count only non-deleted videos
+    const videoCount = await prisma.playlistItem.count({
+      where: {
+        playlistId: playlist.id,
+        video: {
+          deletedAt: null,
+        },
+      },
+    });
+
     return {
       id: playlist.id,
       name: playlist.name,
       description: playlist.description,
       thumbnailUrl,
-      videoCount: playlist._count.items,
+      videoCount,
       videos,
       createdAt: playlist.createdAt,
       updatedAt: playlist.updatedAt,
@@ -283,12 +303,22 @@ export class PlaylistService {
       thumbnailUrl = await getFullImageUrl(updated.items[0].video.thumbnailUrl);
     }
 
+    // Count only non-deleted videos
+    const videoCount = await prisma.playlistItem.count({
+      where: {
+        playlistId: updated.id,
+        video: {
+          deletedAt: null,
+        },
+      },
+    });
+
     return {
       id: updated.id,
       name: updated.name,
       description: updated.description,
       thumbnailUrl,
-      videoCount: updated._count.items,
+      videoCount,
       createdAt: updated.createdAt,
       updatedAt: updated.updatedAt,
     };

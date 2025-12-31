@@ -1,6 +1,8 @@
 [build]
-# Use Dockerfile for building
-dockerfilePath = "Dockerfile"
+# Dockerfile path is set per-service in Railway UI:
+# - admin-api: Dockerfile (or Dockerfile.admin-api)
+# - member-api: Dockerfile.member-api
+# dockerfilePath is configured in Railway Dashboard → Settings → Build
 
 [deploy]
 startCommand = "npm start"

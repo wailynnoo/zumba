@@ -10,7 +10,8 @@
     "login": {
       "success": "Login successful",
       "invalidCredentials": "Invalid credentials",
-      "accountDeactivated": "Account is deactivated"
+      "accountDeactivated": "Account is deactivated",
+      "adminAccount": "This is an admin account. Please use the admin portal to login."
     },
     "logout": {
       "success": "Logged out successfully",

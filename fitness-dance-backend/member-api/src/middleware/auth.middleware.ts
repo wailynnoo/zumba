@@ -4,6 +4,7 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken } from "../utils/jwt";
 import prisma from "../config/database";
+import jwt from "jsonwebtoken";
 
 export interface AuthRequest extends Request {
   user?: {
@@ -38,11 +39,64 @@ export async function authenticate(
     }
 
     const token = authHeader.substring(7); // Remove "Bearer " prefix
-    const payload = verifyAccessToken(token);
+    
+    let payload: any;
+    let userId: string;
+    
+    try {
+      // Try to verify as member token first
+      payload = verifyAccessToken(token);
+      userId = payload.userId;
+    } catch (error: any) {
+      // If member token verification fails, try to decode as admin token
+      // This allows admins to access member API
+      try {
+        const decoded = jwt.decode(token) as any;
+        
+        if (decoded && decoded.adminId) {
+          // Admin token - find corresponding user by email
+          const adminEmail = decoded.email;
+          if (adminEmail) {
+            const userByEmail = await prisma.user.findFirst({
+              where: {
+                email: adminEmail.toLowerCase(),
+                deletedAt: null,
+              },
+              select: {
+                id: true,
+                isActive: true,
+                email: true,
+                phoneNumber: true,
+                displayName: true,
+                avatarUrl: true,
+                dateOfBirth: true,
+                address: true,
+                weight: true,
+                preferredLang: true,
+              },
+            });
+            
+            if (userByEmail) {
+              userId = userByEmail.id;
+              payload = { userId: userByEmail.id };
+            } else {
+              throw new Error("Admin account not linked to a user account");
+            }
+          } else {
+            throw new Error("Invalid admin token: missing email");
+          }
+        } else {
+          throw error; // Re-throw original error if not an admin token
+        }
+      } catch (adminError: any) {
+        // If both fail, return original error
+        throw error;
+      }
+    }
 
     // Verify user exists and is active
     const user = await prisma.user.findUnique({
-      where: { id: payload.userId },
+      where: { id: userId },
       select: {
         id: true,
         isActive: true,

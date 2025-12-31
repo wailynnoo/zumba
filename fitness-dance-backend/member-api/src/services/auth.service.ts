@@ -193,13 +193,23 @@ export class AuthService {
     // Get language from request
     const lang: SupportedLanguage = (req as any)?.language || 'en';
 
-    // Find user by email or phone
+    // Find user by email or phone (exclude soft-deleted users)
+    const whereConditions: any[] = [];
+    if (input.email && typeof input.email === 'string' && input.email.trim()) {
+      whereConditions.push({ email: input.email.trim().toLowerCase() });
+    }
+    if (input.phoneNumber && typeof input.phoneNumber === 'string' && input.phoneNumber.trim()) {
+      whereConditions.push({ phoneNumber: input.phoneNumber.trim() });
+    }
+
+    if (whereConditions.length === 0) {
+      throw new Error(t('auth.login.invalidCredentials', lang));
+    }
+
     const user = await prisma.user.findFirst({
       where: {
-        OR: [
-          input.email ? { email: input.email } : {},
-          input.phoneNumber ? { phoneNumber: input.phoneNumber } : {},
-        ],
+        OR: whereConditions,
+        deletedAt: null, // Exclude soft-deleted users
       },
     });
 

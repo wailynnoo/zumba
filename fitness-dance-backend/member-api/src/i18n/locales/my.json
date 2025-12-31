@@ -10,7 +10,8 @@
     "login": {
       "success": "ဝင်ရောက်မှု အောင်မြင်ပါသည်",
       "invalidCredentials": "မှားယွင်းသော အထောက်အထားများ",
-      "accountDeactivated": "အကောင့်ကို ပိတ်ထားပါသည်"
+      "accountDeactivated": "အကောင့်ကို ပိတ်ထားပါသည်",
+      "adminAccount": "ဤအကောင့်သည် admin အကောင့်ဖြစ်ပါသည်။ admin portal ကို အသုံးပြု၍ ဝင်ရောက်ပါ။"
     },
     "logout": {
       "success": "ထွက်ရောက်မှု အောင်မြင်ပါသည်",
