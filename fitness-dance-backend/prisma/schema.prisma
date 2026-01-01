@@ -6,9 +6,8 @@
 
 generator client {
   provider = "prisma-client-js"
-  // Output is relative to where prisma generate is run from
-  // For admin-api: run from admin-api/ -> outputs to admin-api/node_modules/.prisma/client
-  // For member-api: run from member-api/ -> outputs to member-api/node_modules/.prisma/client
+  // Note: When run from member-api/, Prisma generates to a location relative to the schema
+  // We copy the generated client to the correct location in the Dockerfile
 }
 
 datasource db {

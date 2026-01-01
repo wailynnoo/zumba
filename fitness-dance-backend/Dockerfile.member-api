@@ -32,10 +32,12 @@ WORKDIR /app/prisma
 RUN npm init -y --silent && \
     npm install @prisma/client@7.1.0 --save --legacy-peer-deps
 
-# Now generate from member-api, pointing to schema
-# Prisma generates to ../prisma/node_modules/@prisma/client, copy to member-api location
+# Generate Prisma Client
+# Prisma generates relative to schema location, so copy to member-api location
 WORKDIR /app/member-api
 RUN npx prisma generate --schema=/app/prisma/schema.prisma && \
+    # Prisma generates to ../prisma/node_modules/@prisma/client (schema-relative)
+    # Copy to node_modules/.prisma/client where @prisma/client package expects it
     mkdir -p node_modules/.prisma && \
     cp -r ../prisma/node_modules/@prisma/client node_modules/.prisma/client
 
