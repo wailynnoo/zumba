@@ -1,10 +1,14 @@
-# Dockerfile for member-api
-# Build from fitness-dance-backend root directory
+# Dockerfile for admin-api
+# Build from fitness-dance-backend root directory:
+#   docker build -f Dockerfile -t admin-api .
+#   
 # For Railway: Deploy from root fitness-dance-backend directory
+# Railway auto-detects this Dockerfile for admin-api service
+# (member-api uses Dockerfile.member-api as configured in member-api/railway.toml)
 
 FROM node:20-slim
 
-# Install ffmpeg for video conversion (if needed)
+# Install ffmpeg for video conversion
 RUN apt-get update && \
     apt-get install -y ffmpeg && \
     rm -rf /var/lib/apt/lists/* && \
@@ -16,44 +20,35 @@ WORKDIR /app
 # Copy prisma folder first (needed for prisma generate)
 COPY prisma ./prisma
 
-# Copy ALL member-api files
-COPY member-api ./member-api/
+# Copy admin-api package files
+COPY admin-api/package*.json ./admin-api/
+COPY admin-api/scripts ./admin-api/scripts/
 
-# Install all dependencies
-WORKDIR /app/member-api
-RUN npm install || echo "Install completed with warnings"
+# Install dependencies in admin-api
+WORKDIR /app/admin-api
+RUN npm ci
 
-# Install matching versions of Prisma packages in member-api
-RUN npm install @prisma/client@7.1.0 prisma@7.1.0 --save-exact --legacy-peer-deps && \
-    npm install prisma@7.1.0 --save-dev --save-exact --legacy-peer-deps
+# Copy admin-api source code
+COPY admin-api ./
 
-# Install Prisma CLI in prisma directory (needed for generation)
+# Install Prisma CLI and @prisma/client in prisma directory (needed for generation)
+# The generate-prisma.js script runs from the schema directory and needs @prisma/client there
 WORKDIR /app/prisma
 RUN npm init -y --silent && \
     npm install prisma@7.1.0 @prisma/client@7.1.0 --save-exact --legacy-peer-deps
 
-# Generate Prisma Client from prisma directory
-# This generates to prisma/node_modules/.prisma/client
-WORKDIR /app/prisma
-RUN npx prisma generate
-
-# Copy generated client to member-api where it's needed
-WORKDIR /app/member-api
-RUN mkdir -p node_modules/.prisma && \
+# Build TypeScript (this will also run prisma generate via npm run build)
+WORKDIR /app/admin-api
+RUN npm run build && \
+    # Copy generated Prisma client from prisma directory to admin-api where it's needed
+    mkdir -p node_modules/.prisma && \
     cp -r ../prisma/node_modules/.prisma/client node_modules/.prisma/client
 
-# Install missing types
-RUN npm install --save-dev @types/pg
-
-# Build TypeScript
-RUN npx tsc --skipLibCheck || (echo "⚠️  TypeScript build completed with warnings" && npx tsc --skipLibCheck --noEmitOnError false)
-
-# Remove devDependencies after build
+# Remove devDependencies after build to reduce image size
 RUN npm prune --production
 
 # Expose port (Railway will override this with PORT env var)
-EXPOSE 3001
+EXPOSE 3000
 
 # Start the application
 CMD ["npm", "start"]
-
