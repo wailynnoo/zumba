@@ -20,6 +20,12 @@ WORKDIR /app
 # Copy prisma folder first (needed for prisma generate)
 COPY prisma ./prisma
 
+# Install Prisma CLI and @prisma/client in prisma directory (needed for generation)
+# The generate-prisma.js script runs from the schema directory and needs @prisma/client there
+WORKDIR /app/prisma
+RUN npm init -y --silent && \
+    npm install prisma@7.1.0 @prisma/client@7.1.0 --save-exact --legacy-peer-deps
+
 # Copy admin-api package files
 COPY admin-api/package*.json ./admin-api/
 COPY admin-api/scripts ./admin-api/scripts/
@@ -30,12 +36,6 @@ RUN npm ci
 
 # Copy admin-api source code
 COPY admin-api ./
-
-# Install Prisma CLI and @prisma/client in prisma directory (needed for generation)
-# The generate-prisma.js script runs from the schema directory and needs @prisma/client there
-WORKDIR /app/prisma
-RUN npm init -y --silent && \
-    npm install prisma@7.1.0 @prisma/client@7.1.0 --save-exact --legacy-peer-deps
 
 # Build TypeScript (this will also run prisma generate via npm run build)
 WORKDIR /app/admin-api
