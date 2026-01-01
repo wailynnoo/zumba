@@ -33,9 +33,11 @@ RUN npm init -y --silent && \
     npm install @prisma/client@7.1.0 --save --legacy-peer-deps
 
 # Now generate from member-api, pointing to schema
-# Prisma will generate to ./node_modules/.prisma/client (default location)
+# Prisma generates to ../prisma/node_modules/@prisma/client, copy to member-api location
 WORKDIR /app/member-api
-RUN npx prisma generate --schema=/app/prisma/schema.prisma
+RUN npx prisma generate --schema=/app/prisma/schema.prisma && \
+    mkdir -p node_modules/.prisma && \
+    cp -r ../prisma/node_modules/@prisma/client node_modules/.prisma/client
 
 # Install missing types
 RUN npm install --save-dev @types/pg
