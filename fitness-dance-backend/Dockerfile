@@ -27,19 +27,10 @@ RUN npm install || echo "Install completed with warnings"
 RUN npm install @prisma/client@7.1.0 prisma@7.1.0 --save-exact --legacy-peer-deps && \
     npm install prisma@7.1.0 --save-dev --save-exact --legacy-peer-deps
 
-# Install @prisma/client in prisma directory for Prisma generation
-WORKDIR /app/prisma
-RUN npm init -y --silent && \
-    npm install @prisma/client@7.1.0 --save --legacy-peer-deps
-
 # Generate Prisma Client from member-api directory
-# Prisma generates relative to schema location, so copy to member-api location
+# Prisma should generate to node_modules/.prisma/client by default
 WORKDIR /app/member-api
-RUN npx prisma generate --schema=/app/prisma/schema.prisma && \
-    # Prisma generates to ../prisma/node_modules/@prisma/client (schema-relative)
-    # Copy to node_modules/.prisma/client where @prisma/client package expects it
-    mkdir -p node_modules/.prisma && \
-    cp -r ../prisma/node_modules/@prisma/client node_modules/.prisma/client
+RUN npx prisma generate --schema=/app/prisma/schema.prisma
 
 # Install missing types
 RUN npm install --save-dev @types/pg
